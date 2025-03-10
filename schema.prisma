@@ -1,0 +1,30 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Placelist {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  items       Json // array of {location: {lat: number, lng: number}, spotifyUrl: string}
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  sessions    UserSession[]
+}
+
+model UserSession {
+  id          String    @id @default(cuid())
+  placelistId String
+  placelist   Placelist @relation(fields: [placelistId], references: [id])
+  progress    Int       @default(0) // Index of the last unlocked item
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
