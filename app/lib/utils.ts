@@ -46,6 +46,44 @@ export function calculateBearing(
   return ((θ * 180) / Math.PI + 360) % 360; // in degrees
 }
 
+// Convert heading in degrees to a compass direction
+export function getCompassDirection(degrees: number): string {
+  // Define direction ranges
+  const directions = [
+    { label: "N", min: 348.75, max: 360 },
+    { label: "N", min: 0, max: 11.25 },
+    { label: "NNE", min: 11.25, max: 33.75 },
+    { label: "NE", min: 33.75, max: 56.25 },
+    { label: "ENE", min: 56.25, max: 78.75 },
+    { label: "E", min: 78.75, max: 101.25 },
+    { label: "ESE", min: 101.25, max: 123.75 },
+    { label: "SE", min: 123.75, max: 146.25 },
+    { label: "SSE", min: 146.25, max: 168.75 },
+    { label: "S", min: 168.75, max: 191.25 },
+    { label: "SSW", min: 191.25, max: 213.75 },
+    { label: "SW", min: 213.75, max: 236.25 },
+    { label: "WSW", min: 236.25, max: 258.75 },
+    { label: "W", min: 258.75, max: 281.25 },
+    { label: "WNW", min: 281.25, max: 303.75 },
+    { label: "NW", min: 303.75, max: 326.25 },
+    { label: "NNW", min: 326.25, max: 348.75 }
+  ];
+
+  // Handle special case for North spanning 348.75-360 and 0-11.25
+  if (degrees >= 348.75 || degrees < 11.25) {
+    return "N";
+  }
+
+  // Find the matching direction
+  for (const dir of directions) {
+    if (degrees >= dir.min && degrees < dir.max) {
+      return dir.label;
+    }
+  }
+
+  return "N"; // Default fallback
+}
+
 // Parse placelist text format
 export function parsePlacelistText(text: string): Array<{
   location: { lat: number; lng: number };

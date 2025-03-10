@@ -2,7 +2,7 @@ import { useLoaderData, useFetcher } from "react-router";
 import { useEffect, useState, useRef } from "react";
 import type { Route } from "./+types/$sessionId";
 import { getSession, updateSessionProgress } from "../../lib/db";
-import { calculateDistance, calculateBearing } from "../../lib/utils";
+import { calculateDistance, calculateBearing, getCompassDirection } from "../../lib/utils";
 
 export async function loader({ params }: Route.LoaderArgs) {
   const session = await getSession(params.sessionId as string);
@@ -66,6 +66,8 @@ export default function Player() {
   const [bearing, setBearing] = useState<number | null>(null);
   const [watching, setWatching] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
+  const [deviceOrientation, setDeviceOrientation] = useState<number | null>(null);
+  const [compassDirection, setCompassDirection] = useState<string>("N");
   
   const watchId = useRef<number | null>(null);
   const fetcher = useFetcher();
@@ -73,8 +75,31 @@ export default function Player() {
   // Complete state
   const isComplete = currentItem >= items.length;
   
-  // Start watching geolocation
-  function startWatching() {
+  // Request device orientation permission (for iOS)
+  async function requestOrientationPermission() {
+    // Check if DeviceOrientationEvent exists and has the requestPermission method (iOS 13+)
+    if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+      try {
+        // Request permission
+        const permissionState = await (DeviceOrientationEvent as any).requestPermission();
+        if (permissionState === 'granted') {
+          return true;
+        } else {
+          console.warn("Device orientation permission denied");
+          return false;
+        }
+      } catch (error) {
+        console.error("Error requesting device orientation permission:", error);
+        return false;
+      }
+    } else {
+      // No permission needed for non-iOS or older iOS
+      return true;
+    }
+  }
+
+  // Start watching geolocation and device orientation
+  async function startWatching() {
     if (!navigator.geolocation) {
       setError("Geolocation is not supported by your browser");
       return;
@@ -82,6 +107,37 @@ export default function Player() {
     
     setWatching(true);
     
+    // Start watching device orientation
+    if (window.DeviceOrientationEvent) {
+      // Request permission first (for iOS)
+      const permissionGranted = await requestOrientationPermission();
+      
+      if (permissionGranted) {
+        const handleOrientation = (event: DeviceOrientationEvent) => {
+          // For iOS devices - alpha is relative to magnetic north
+          if (event.webkitCompassHeading !== undefined) {
+            const heading = event.webkitCompassHeading;
+            setDeviceOrientation(heading);
+            setCompassDirection(getCompassDirection(heading));
+          } 
+          // For Android devices - alpha is relative to arbitrary direction
+          else if (event.alpha !== null) {
+            const heading = 360 - event.alpha; // Convert to clockwise rotation
+            setDeviceOrientation(heading);
+            setCompassDirection(getCompassDirection(heading));
+          }
+        };
+        
+        // Store reference to the handler for cleanup
+        orientationHandlerRef.current = handleOrientation;
+        
+        window.addEventListener('deviceorientation', handleOrientation, true);
+      }
+    } else {
+      console.warn("Device orientation not supported by this browser");
+    }
+    
+    // Start watching geolocation
     watchId.current = navigator.geolocation.watchPosition(
       (position) => {
         setPosition(position);
@@ -124,12 +180,23 @@ export default function Player() {
     );
   }
   
-  // Stop watching geolocation
+  // Reference to orientation event handler
+  const orientationHandlerRef = useRef<((event: DeviceOrientationEvent) => void) | null>(null);
+  
+  // Stop watching geolocation and device orientation
   function stopWatching() {
+    // Clear geolocation watch
     if (watchId.current !== null) {
       navigator.geolocation.clearWatch(watchId.current);
       watchId.current = null;
     }
+    
+    // Remove device orientation event listener
+    if (orientationHandlerRef.current) {
+      window.removeEventListener('deviceorientation', orientationHandlerRef.current, true);
+      orientationHandlerRef.current = null;
+    }
+    
     setWatching(false);
   }
   
@@ -154,11 +221,15 @@ export default function Player() {
     }
   }
   
-  // Clean up the geolocation watcher when the component unmounts
+  // Clean up the geolocation watcher and device orientation listener when the component unmounts
   useEffect(() => {
     return () => {
       if (watchId.current !== null) {
         navigator.geolocation.clearWatch(watchId.current);
+      }
+      
+      if (orientationHandlerRef.current) {
+        window.removeEventListener('deviceorientation', orientationHandlerRef.current, true);
       }
     };
   }, []);
@@ -240,18 +311,36 @@ export default function Player() {
                       className="mx-auto mb-4 w-32 h-32 rounded-full bg-gray-100 relative border-4 border-gray-300 flex items-center justify-center"
                       style={{ boxShadow: "0 0 10px rgba(0,0,0,0.1)" }}
                     >
+                      {/* Direction labels */}
+                      <div className="absolute top-0 text-xs font-bold text-gray-600" style={{ transform: "translateY(-50%)" }}>N</div>
+                      <div className="absolute right-0 text-xs font-bold text-gray-600" style={{ transform: "translateX(50%)" }}>E</div>
+                      <div className="absolute bottom-0 text-xs font-bold text-gray-600" style={{ transform: "translateY(50%)" }}>S</div>
+                      <div className="absolute left-0 text-xs font-bold text-gray-600" style={{ transform: "translateX(-50%)" }}>W</div>
+                      
+                      {/* Heading indicator arrow */}
                       {bearing !== null && (
                         <div 
                           className="absolute w-2 h-16 bg-green-500 rounded" 
                           style={{ 
                             transformOrigin: "bottom center",
-                            transform: `rotate(${bearing}deg) translateX(-50%)`,
+                            transform: deviceOrientation !== null
+                              ? `rotate(${bearing - deviceOrientation}deg) translateX(-50%)`
+                              : `rotate(${bearing}deg) translateX(-50%)`,
                             bottom: "50%",
                             left: "50%"
                           }}
                         />
                       )}
+                      
+                      {/* Center dot */}
                       <div className="w-4 h-4 rounded-full bg-green-500 absolute" />
+                      
+                      {/* Current direction */}
+                      {deviceOrientation !== null && (
+                        <div className="absolute top-8 text-lg font-bold text-green-600">
+                          {compassDirection}
+                        </div>
+                      )}
                     </div>
                     
                     <div className="text-3xl font-bold mb-1">
