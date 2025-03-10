@@ -84,6 +84,36 @@ export function getCompassDirection(degrees: number): string {
   return "N"; // Default fallback
 }
 
+/**
+ * Extracts Spotify track ID from a Spotify URL
+ */
+export function extractSpotifyTrackId(spotifyUrl: string): string | null {
+  // Handle both formats: https://open.spotify.com/track/ID and spotify:track:ID
+  if (spotifyUrl.includes('spotify.com/track/')) {
+    const match = spotifyUrl.match(/spotify\.com\/track\/([a-zA-Z0-9]+)/);
+    return match ? match[1] : null;
+  } else if (spotifyUrl.includes('spotify:track:')) {
+    const match = spotifyUrl.match(/spotify:track:([a-zA-Z0-9]+)/);
+    return match ? match[1] : null;
+  }
+  return null;
+}
+
+/**
+ * Generates a Google Static Maps URL for a given location
+ */
+export function getGoogleStaticMapUrl(lat: number, lng: number, zoom: number = 15, width: number = 300, height: number = 200): string {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  
+  if (apiKey) {
+    // If API key is available, use the Google Maps API
+    return `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${zoom}&size=${width}x${height}&markers=color:red%7C${lat},${lng}&key=${apiKey}`;
+  } else {
+    // Fallback to placeholder if no API key is provided
+    return `https://placehold.co/${width}x${height}?text=Map+Location:+${lat.toFixed(4)},${lng.toFixed(4)}`;
+  }
+}
+
 // Parse placelist text format
 export function parsePlacelistText(text: string): Array<{
   location: { lat: number; lng: number };

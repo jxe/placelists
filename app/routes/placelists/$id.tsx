@@ -1,6 +1,19 @@
 import { Link, redirect, useLoaderData, Form } from "react-router";
+import { useState, useEffect } from "react";
 import type { Route } from "./+types/$id";
 import { getPlacelist, createSession, deletePlacelist } from "../../lib/db";
+import { extractSpotifyTrackId, getGoogleStaticMapUrl } from "../../lib/utils";
+import { getSpotifyTrackInfo, type SpotifyTrackInfo } from "../../lib/spotify";
+
+interface EnhancedPlacelistItem {
+  location: {
+    lat: number;
+    lng: number;
+  };
+  spotifyUrl: string;
+  trackId: string | null;
+  trackInfo?: SpotifyTrackInfo | null;
+}
 
 export async function loader({ params }: Route.LoaderArgs) {
   const placelist = await getPlacelist(params.id as string);
@@ -9,7 +22,27 @@ export async function loader({ params }: Route.LoaderArgs) {
     throw new Response("Not Found", { status: 404 });
   }
   
-  return { placelist };
+  // Enhance items with Spotify track IDs
+  const items = placelist.items as Array<{ location: { lat: number; lng: number }; spotifyUrl: string }>;
+  const enhancedItems: EnhancedPlacelistItem[] = [];
+  
+  for (const item of items) {
+    const trackId = extractSpotifyTrackId(item.spotifyUrl);
+    let trackInfo = null;
+    
+    if (trackId) {
+      // Try to fetch track info - this will only work if env variables are set
+      trackInfo = await getSpotifyTrackInfo(item.spotifyUrl);
+    }
+    
+    enhancedItems.push({
+      ...item,
+      trackId,
+      trackInfo
+    });
+  }
+  
+  return { placelist, enhancedItems };
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
@@ -47,8 +80,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function PlacelistDetail() {
-  const { placelist } = useLoaderData<typeof loader>();
-  const items = placelist.items as Array<{ location: { lat: number; lng: number }; spotifyUrl: string }>;
+  const { placelist, enhancedItems } = useLoaderData<typeof loader>();
   
   return (
     <div className="container mx-auto px-4 py-12 max-w-4xl">
@@ -89,27 +121,70 @@ export default function PlacelistDetail() {
       </div>
       
       <div className="mb-8">
-        <h2 className="text-xl font-semibold mb-4">Locations ({items.length})</h2>
+        <h2 className="text-xl font-semibold mb-4">Locations ({enhancedItems.length})</h2>
         <div className="bg-gray-50 p-6 rounded-lg">
-          <ul className="space-y-4">
-            {items.map((item, index) => (
-              <li key={index} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
-                <div>
-                  <span className="inline-block w-6 h-6 text-center bg-green-500 text-white rounded-full mr-2">
-                    {index + 1}
-                  </span>
-                  <span className="font-mono text-sm">
-                    {item.location.lat.toFixed(6)}, {item.location.lng.toFixed(6)}
-                  </span>
+          <ul className="space-y-6">
+            {enhancedItems.map((item, index) => (
+              <li key={index} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Location Map */}
+                  <div className="h-48 md:h-auto">
+                    <img 
+                      src={getGoogleStaticMapUrl(item.location.lat, item.location.lng, 14, 400, 300)} 
+                      alt={`Map location ${index + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  
+                  {/* Location Details */}
+                  <div className="p-4 md:col-span-2">
+                    <div className="flex items-center mb-3">
+                      <span className="inline-block w-6 h-6 text-center bg-green-500 text-white rounded-full mr-2">
+                        {index + 1}
+                      </span>
+                      {item.trackInfo ? (
+                        <span className="font-medium">{item.trackInfo.name} - {item.trackInfo.artist}</span>
+                      ) : (
+                        <span className="font-medium">Location {index + 1}</span>
+                      )}
+                    </div>
+                    
+                    <div className="mb-4">
+                      <div className="font-mono text-sm mb-2">
+                        {item.location.lat.toFixed(6)}, {item.location.lng.toFixed(6)}
+                      </div>
+                    </div>
+                    
+                    {/* Spotify Embed */}
+                    {item.trackId ? (
+                      <div className="spotify-embed">
+                        <div 
+                          dangerouslySetInnerHTML={{ 
+                            __html: `<iframe 
+                              style="border-radius:12px" 
+                              src="https://open.spotify.com/embed/track/${item.trackId}" 
+                              width="100%" 
+                              height="80" 
+                              frameBorder="0" 
+                              allowfullscreen="" 
+                              allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
+                              loading="lazy">
+                            </iframe>` 
+                          }} 
+                        />
+                      </div>
+                    ) : (
+                      <a
+                        href={item.spotifyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-green-500 hover:underline inline-block"
+                      >
+                        {item.spotifyUrl}
+                      </a>
+                    )}
+                  </div>
                 </div>
-                <a
-                  href={item.spotifyUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-green-500 hover:underline mt-2 md:mt-0"
-                >
-                  {item.spotifyUrl.substring(0, 60)}...
-                </a>
               </li>
             ))}
           </ul>
