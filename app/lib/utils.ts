@@ -119,31 +119,62 @@ export function parsePlacelistText(text: string): Array<{
   location: { lat: number; lng: number };
   spotifyUrl: string;
 }> {
-  const lines = text.trim().split("\n");
+  // First, filter out empty lines to handle user-added blank lines
+  const filteredLines = text.split("\n")
+    .map(line => line.trim())
+    .filter(line => line.length > 0);
+  
   const items = [];
+  let currentLocation: string | null = null;
 
-  for (let i = 0; i < lines.length; i += 2) {
-    if (i + 1 >= lines.length) break;
-
-    const locationLine = lines[i].trim();
-    const spotifyLine = lines[i + 1].trim();
-
-    // Parse location - expects "lat,lng" format
-    const [lat, lng] = locationLine.split(",").map(Number);
+  // Process each non-empty line
+  for (let i = 0; i < filteredLines.length; i++) {
+    const line = filteredLines[i];
     
-    if (isNaN(lat) || isNaN(lng)) {
-      throw new Error(`Invalid location format at line ${i + 1}`);
+    // Check if line looks like a location (contains comma and numbers)
+    if (line.includes(",") && /^-?\d+\.?\d*,-?\d+\.?\d*$/.test(line)) {
+      // If we have a location and the next line is a Spotify URL, create an item
+      if (i + 1 < filteredLines.length) {
+        const nextLine = filteredLines[i + 1];
+        
+        // Check if next line is a Spotify URL
+        if (nextLine.includes("spotify.com") || nextLine.includes("spotify:track:")) {
+          // Parse location
+          const [lat, lng] = line.split(",").map(Number);
+          
+          // Add item
+          items.push({
+            location: { lat, lng },
+            spotifyUrl: nextLine,
+          });
+          
+          // Skip the Spotify URL line in the next iteration
+          i++;
+        } else {
+          // Store current location for potential matching with later Spotify URL
+          currentLocation = line;
+        }
+      }
+    } 
+    // If line is a Spotify URL and we have a pending location
+    else if (currentLocation && (line.includes("spotify.com") || line.includes("spotify:track:"))) {
+      // Parse location
+      const [lat, lng] = currentLocation.split(",").map(Number);
+      
+      // Add item
+      items.push({
+        location: { lat, lng },
+        spotifyUrl: line,
+      });
+      
+      // Reset the current location
+      currentLocation = null;
     }
+  }
 
-    // Validate Spotify URL
-    if (!spotifyLine.includes("spotify.com") && !spotifyLine.includes("open.spotify.com")) {
-      throw new Error(`Invalid Spotify URL at line ${i + 2}`);
-    }
-
-    items.push({
-      location: { lat, lng },
-      spotifyUrl: spotifyLine,
-    });
+  // Validate we have at least one item
+  if (items.length === 0 && filteredLines.length > 0) {
+    throw new Error("No valid location-song pairs found. Please check your format.");
   }
 
   return items;

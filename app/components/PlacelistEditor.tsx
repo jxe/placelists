@@ -46,32 +46,65 @@ export default function PlacelistEditor({
     }
     
     try {
-      const lines = textAreaValue.trim().split('\n');
-      const items: PlacelistItem[] = [];
+      // Filter out empty lines and collect non-empty lines
+      const filteredLines = textAreaValue.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
       
-      for (let i = 0; i < lines.length; i += 2) {
-        if (i + 1 >= lines.length) break;
+      const items: PlacelistItem[] = [];
+      let currentLocation: { lat: number; lng: number } | null = null;
+      
+      // Process each non-empty line
+      for (let i = 0; i < filteredLines.length; i++) {
+        const line = filteredLines[i];
         
-        const locationLine = lines[i].trim();
-        const spotifyLine = lines[i + 1].trim();
-        
-        // Skip invalid entries
-        if (!locationLine || !spotifyLine) continue;
-        
-        // Try to parse location
-        try {
-          const [lat, lng] = locationLine.split(",").map(Number);
-          if (isNaN(lat) || isNaN(lng)) continue;
-          
-          const trackId = extractSpotifyTrackId(spotifyLine);
+        // Check if line looks like a location (contains comma and numbers)
+        if (line.includes(",") && /^-?\d+\.?\d*,-?\d+\.?\d*$/.test(line)) {
+          try {
+            // Parse location
+            const [lat, lng] = line.split(",").map(Number);
+            if (!isNaN(lat) && !isNaN(lng)) {
+              // Check if next line is a Spotify URL
+              if (i + 1 < filteredLines.length) {
+                const nextLine = filteredLines[i + 1];
+                
+                if (nextLine.includes("spotify.com") || nextLine.includes("spotify:track:")) {
+                  const trackId = extractSpotifyTrackId(nextLine);
+                  
+                  items.push({
+                    location: { lat, lng },
+                    spotifyUrl: nextLine,
+                    trackId
+                  });
+                  
+                  // Skip the Spotify URL line in the next iteration
+                  i++;
+                } else {
+                  // Store current location for potential matching with a later Spotify URL
+                  currentLocation = { lat, lng };
+                }
+              } else {
+                // This is the last line and it's a location
+                currentLocation = { lat, lng };
+              }
+            }
+          } catch (err) {
+            // Invalid location format
+            continue;
+          }
+        } 
+        // If line is a Spotify URL and we have a pending location
+        else if (currentLocation && (line.includes("spotify.com") || line.includes("spotify:track:"))) {
+          const trackId = extractSpotifyTrackId(line);
           
           items.push({
-            location: { lat, lng },
-            spotifyUrl: spotifyLine,
+            location: currentLocation,
+            spotifyUrl: line,
             trackId
           });
-        } catch (err) {
-          continue; // Skip invalid entries
+          
+          // Reset the current location
+          currentLocation = null;
         }
       }
       
@@ -119,7 +152,11 @@ export default function PlacelistEditor({
         alert(`Error getting location: ${error.message}`);
         setIsGettingLocation(false);
       },
-      { enableHighAccuracy: true }
+      { 
+        enableHighAccuracy: true,
+        maximumAge: 0, // Don't use cached positions
+        timeout: 10000  // Wait up to 10 seconds for a new position
+      }
     );
   };
 
