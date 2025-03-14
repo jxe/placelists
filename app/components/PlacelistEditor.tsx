@@ -106,6 +106,14 @@ const MapPicker = ({ onLocationSelect }: { onLocationSelect: (lat: number, lng: 
   );
 };
 
+// Used to track which item is being edited
+interface EditingState {
+  index: number;
+  type: 'location' | 'spotify' | null;
+  showMapPicker?: boolean;
+  isGettingLocation?: boolean;
+}
+
 export default function PlacelistEditor({
   formAction,
   defaultValues,
@@ -115,8 +123,18 @@ export default function PlacelistEditor({
   cancelHref,
 }: PlacelistEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const spotifyInputRef = useRef<HTMLInputElement>(null);
+  
+  // State for tabs
+  const [activeTab, setActiveTab] = useState<'text' | 'preview'>('preview');
+  
+  // State for editing
   const [isGettingLocation, setIsGettingLocation] = useState(false);
-  const [showMapPicker, setShowMapPicker] = useState(false);
+  const [editingState, setEditingState] = useState<EditingState | null>(null);
+  const [showNewEntryForm, setShowNewEntryForm] = useState(false);
+  const [newEntrySpotifyUrl, setNewEntrySpotifyUrl] = useState('');
+  
+  // Main data states
   const [parsedItems, setParsedItems] = useState<PlacelistItem[]>([]);
   const [textAreaValue, setTextAreaValue] = useState(defaultValues.placelistText);
 
@@ -196,35 +214,48 @@ export default function PlacelistEditor({
     }
   }, [textAreaValue]);
 
-  // Function to add selected location from map to the textarea
-  const addSelectedLocation = (lat: number, lng: number) => {
-    const locationString = `${lat},${lng}\n`;
+  // Function to update the text representation based on parsedItems
+  const updateTextFromParsedItems = (items: PlacelistItem[]) => {
+    const newText = items.map(item => 
+      `${item.location?.lat || ''},${item.location?.lng || ''}\n${item.spotifyUrl || ''}`
+    ).join('\n');
     
-    if (textareaRef.current) {
-      const textArea = textareaRef.current;
-      const currentValue = textArea.value;
+    setTextAreaValue(newText);
+  };
+
+  // Function to handle adding or updating a location from map selection
+  const handleLocationSelect = (lat: number, lng: number) => {
+    if (editingState) {
+      // Update existing entry
+      const updatedItems = [...parsedItems];
+      updatedItems[editingState.index] = {
+        ...updatedItems[editingState.index],
+        location: { lat, lng }
+      };
       
-      // If there's already text, add a new line if needed
-      const newValue = currentValue 
-        ? (currentValue.endsWith('\n') ? currentValue : currentValue + '\n') + locationString
-        : locationString;
-        
-      textArea.value = newValue;
-      setTextAreaValue(newValue);
+      setParsedItems(updatedItems);
+      updateTextFromParsedItems(updatedItems);
+      setEditingState(null);
+    } else if (showNewEntryForm) {
+      // Add location to new entry
+      const newItem: PlacelistItem = {
+        location: { lat, lng },
+        spotifyUrl: newEntrySpotifyUrl,
+        trackId: extractSpotifyTrackId(newEntrySpotifyUrl)
+      };
       
-      // Set focus to textarea and position cursor at end
-      textArea.focus();
-      textArea.setSelectionRange(newValue.length, newValue.length);
+      const updatedItems = [...parsedItems, newItem];
+      setParsedItems(updatedItems);
+      updateTextFromParsedItems(updatedItems);
+      
+      // Reset new entry form
+      setShowNewEntryForm(false);
+      setNewEntrySpotifyUrl('');
     }
   };
 
-  // Function to toggle the map picker
-  const toggleMapPicker = () => {
-    setShowMapPicker(!showMapPicker);
-  };
-
-  // Function to add current location to the textarea
-  const addCurrentLocation = () => {
+  // Function to get current location
+  const getCurrentLocation = (callback: (lat: number, lng: number) => void) => {
     if (!navigator.geolocation) {
       alert("Geolocation is not supported by your browser");
       return;
@@ -235,25 +266,7 @@ export default function PlacelistEditor({
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
-        const locationString = `${latitude},${longitude}\n`;
-        
-        if (textareaRef.current) {
-          const textArea = textareaRef.current;
-          const currentValue = textArea.value;
-          
-          // If there's already text, add a new line if needed
-          const newValue = currentValue 
-            ? (currentValue.endsWith('\n') ? currentValue : currentValue + '\n') + locationString
-            : locationString;
-            
-          textArea.value = newValue;
-          setTextAreaValue(newValue);
-          
-          // Set focus to textarea and position cursor at end
-          textArea.focus();
-          textArea.setSelectionRange(newValue.length, newValue.length);
-        }
-        
+        callback(latitude, longitude);
         setIsGettingLocation(false);
       },
       (error) => {
@@ -263,10 +276,89 @@ export default function PlacelistEditor({
       },
       { 
         enableHighAccuracy: true,
-        maximumAge: 0, // Don't use cached positions
-        timeout: 10000  // Wait up to 10 seconds for a new position
+        maximumAge: 0,
+        timeout: 10000
       }
     );
+  };
+
+  // Function to add current location to an entry
+  const addCurrentLocationToEntry = (index?: number) => {
+    getCurrentLocation((lat, lng) => {
+      if (index !== undefined) {
+        // Update existing entry
+        const updatedItems = [...parsedItems];
+        updatedItems[index] = {
+          ...updatedItems[index],
+          location: { lat, lng }
+        };
+        
+        setParsedItems(updatedItems);
+        updateTextFromParsedItems(updatedItems);
+        setEditingState(null);
+      } else if (showNewEntryForm) {
+        // Add to new entry
+        const newItem: PlacelistItem = {
+          location: { lat, lng },
+          spotifyUrl: newEntrySpotifyUrl,
+          trackId: extractSpotifyTrackId(newEntrySpotifyUrl)
+        };
+        
+        const updatedItems = [...parsedItems, newItem];
+        setParsedItems(updatedItems);
+        updateTextFromParsedItems(updatedItems);
+        
+        // Reset new entry form
+        setShowNewEntryForm(false);
+        setNewEntrySpotifyUrl('');
+      }
+    });
+  };
+
+  // Function to start editing an entry
+  const startEditingEntry = (index: number, type: 'location' | 'spotify') => {
+    setEditingState({ index, type });
+  };
+  
+  // Function to add new entry with only Spotify
+  const addSpotifyOnlyEntry = () => {
+    if (!newEntrySpotifyUrl) return;
+    
+    const newItem: PlacelistItem = {
+      location: { lat: 0, lng: 0 },  // Placeholder
+      spotifyUrl: newEntrySpotifyUrl,
+      trackId: extractSpotifyTrackId(newEntrySpotifyUrl)
+    };
+    
+    const updatedItems = [...parsedItems, newItem];
+    setParsedItems(updatedItems);
+    updateTextFromParsedItems(updatedItems);
+    
+    // Reset new entry form
+    setShowNewEntryForm(false);
+    setNewEntrySpotifyUrl('');
+  };
+  
+  // Function to update Spotify URL for an entry
+  const updateSpotifyUrl = (index: number, url: string) => {
+    const updatedItems = [...parsedItems];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      spotifyUrl: url,
+      trackId: extractSpotifyTrackId(url)
+    };
+    
+    setParsedItems(updatedItems);
+    updateTextFromParsedItems(updatedItems);
+    setEditingState(null);
+  };
+  
+  // Function to remove an entry
+  const removeEntry = (index: number) => {
+    const updatedItems = [...parsedItems];
+    updatedItems.splice(index, 1);
+    setParsedItems(updatedItems);
+    updateTextFromParsedItems(updatedItems);
   };
 
   return (
@@ -310,160 +402,395 @@ export default function PlacelistEditor({
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <div className="flex justify-between items-center mb-2">
-              <label htmlFor="placelistText" className="block text-sm font-medium">
-                Placelist Content
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={toggleMapPicker}
-                  className={`text-sm ${showMapPicker ? 'bg-green-500 hover:bg-green-600' : 'bg-purple-500 hover:bg-purple-600'} text-white font-medium py-1 px-3 rounded flex items-center`}
-                >
-                  <svg 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    className="h-4 w-4 mr-1" 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="2" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round"
-                  >
-                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-                    <circle cx="12" cy="10" r="3" />
-                  </svg>
-                  {showMapPicker ? 'Hide Map Picker' : 'Use Map Picker'}
-                </button>
-                <button
-                  type="button"
-                  onClick={addCurrentLocation}
-                  disabled={isGettingLocation}
-                  className="text-sm bg-blue-500 hover:bg-blue-600 text-white font-medium py-1 px-3 rounded disabled:opacity-50 flex items-center"
-                >
-                  {isGettingLocation ? (
-                    <span>Getting location...</span>
-                  ) : (
-                    <>
-                      <svg 
-                        xmlns="http://www.w3.org/2000/svg" 
-                        className="h-4 w-4 mr-1" 
-                        viewBox="0 0 24 24" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        strokeWidth="2" 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round"
-                      >
-                        <circle cx="12" cy="12" r="10" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
-                      Add Current Location
-                    </>
-                  )}
-                </button>
+        {/* Tab navigation */}
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex">
+            <button
+              type="button"
+              onClick={() => setActiveTab('text')}
+              className={`py-2 px-4 text-center border-b-2 font-medium text-sm ${
+                activeTab === 'text'
+                  ? 'border-green-500 text-green-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Text Mode
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('preview')}
+              className={`py-2 px-4 text-center border-b-2 font-medium text-sm ${
+                activeTab === 'preview'
+                  ? 'border-green-500 text-green-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Preview Mode
+            </button>
+          </nav>
+        </div>
+
+        {/* Hidden textarea for form submission */}
+        <input 
+          type="hidden" 
+          name="placelistText" 
+          value={textAreaValue} 
+        />
+        
+        {/* Tab content */}
+        <div className="mt-4">
+          {/* Text Mode Tab Content */}
+          {activeTab === 'text' && (
+            <div>
+              <div className="mb-2 text-sm text-gray-600">
+                <p>Enter alternating lines of:</p>
+                <ol className="list-decimal list-inside mt-1 ml-4 space-y-1">
+                  <li>Latitude,Longitude (e.g., "37.7749,-122.4194")</li>
+                  <li>Spotify link (e.g., "https://open.spotify.com/track/...")</li>
+                </ol>
               </div>
-            </div>
-            {showMapPicker && (
-              <div className="mb-4 border border-gray-300 rounded-lg overflow-hidden">
-                <MapPicker onLocationSelect={addSelectedLocation} />
-                <div className="p-2 bg-gray-100 text-sm text-gray-600">
-                  Click anywhere on the map to select a location. The coordinates will be added to your placelist.
-                </div>
-              </div>
-            )}
-            <div className="mb-2 text-sm text-gray-600">
-              <p>Enter alternating lines of:</p>
-              <ol className="list-decimal list-inside mt-1 ml-4 space-y-1">
-                <li>Latitude,Longitude (e.g., "37.7749,-122.4194")</li>
-                <li>Spotify link (e.g., "https://open.spotify.com/track/...")</li>
-              </ol>
-            </div>
-            <textarea
-              ref={textareaRef}
-              id="placelistText"
-              name="placelistText"
-              value={textAreaValue}
-              onChange={(e) => setTextAreaValue(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 h-72 font-mono"
-              placeholder="37.7749,-122.4194
+              <textarea
+                ref={textareaRef}
+                value={textAreaValue}
+                onChange={(e) => setTextAreaValue(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 h-72 font-mono"
+                placeholder="37.7749,-122.4194
 https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT
 37.7833,-122.4167
 https://open.spotify.com/track/0GswOA5NnzbGuC7WWjmCck"
-            />
-            {errors?.placelistText && (
-              <p className="text-red-500 text-sm mt-1">{errors.placelistText}</p>
-            )}
-          </div>
+              />
+              {errors?.placelistText && (
+                <p className="text-red-500 text-sm mt-1">{errors.placelistText}</p>
+              )}
+            </div>
+          )}
           
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Preview</h3>
-            {parsedItems.length > 0 ? (
-              <div className="space-y-6">
-                {parsedItems.map((item, index) => (
-                  <div key={index} className="border border-gray-200 rounded-lg overflow-hidden bg-white">
-                    <div className="p-3 bg-gray-50 border-b border-gray-200 flex items-center">
-                      <span className="inline-block w-6 h-6 text-center bg-green-500 text-white rounded-full mr-2">
-                        {index + 1}
-                      </span>
-                      <span className="text-sm font-mono">
-                        {item.location.lat.toFixed(6)}, {item.location.lng.toFixed(6)}
-                      </span>
-                    </div>
-                    
-                    {/* Map preview */}
-                    <div className="border-b border-gray-200">
-                      <img 
-                        src={getGoogleStaticMapUrl(item.location.lat, item.location.lng, 14, 400, 200)} 
-                        alt={`Map location ${index + 1}`}
-                        className="w-full h-32 object-cover"
-                      />
-                    </div>
-                    
-                    {/* Spotify preview */}
-                    <div className="p-3">
-                      {item.trackId ? (
-                        <>
-                          <div 
-                            className="spotify-embed" 
-                            dangerouslySetInnerHTML={{ 
-                              __html: `<iframe 
-                                style="border-radius:12px" 
-                                src="https://open.spotify.com/embed/track/${item.trackId}" 
-                                width="100%" 
-                                height="80" 
-                                frameBorder="0" 
-                                allowfullscreen="" 
-                                allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
-                                loading="lazy">
-                              </iframe>` 
-                            }} 
-                          />
-                          <div className="mt-2 text-xs text-gray-500">
-                            <p>Track ID: {item.trackId}</p>
-                            <p className="mt-1">Note: Full track info will be available with Spotify API credentials.</p>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="text-sm text-gray-500 p-2 bg-gray-50 rounded">
-                          Invalid Spotify URL
-                        </div>
-                      )}
+          {/* Preview Mode Tab Content */}
+          {activeTab === 'preview' && (
+            <div>
+              {/* New Entry Form */}
+              {showNewEntryForm ? (
+                <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                  <h3 className="text-lg font-medium mb-4">Add New Entry</h3>
+                  
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium mb-2">
+                      Spotify Link
+                    </label>
+                    <input
+                      type="text"
+                      ref={spotifyInputRef}
+                      value={newEntrySpotifyUrl}
+                      onChange={(e) => setNewEntrySpotifyUrl(e.target.value)}
+                      placeholder="https://open.spotify.com/track/..."
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500"
+                    />
+                  </div>
+                  
+                  <div className="mb-4">
+                    <p className="text-sm font-medium mb-2">Location</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingState({ 
+                            index: -1, 
+                            type: 'location',
+                            showMapPicker: true
+                          });
+                        }}
+                        className="text-sm bg-purple-500 hover:bg-purple-600 text-white font-medium py-1 px-3 rounded flex items-center"
+                      >
+                        <svg 
+                          xmlns="http://www.w3.org/2000/svg" 
+                          className="h-4 w-4 mr-1" 
+                          viewBox="0 0 24 24" 
+                          fill="none" 
+                          stroke="currentColor" 
+                          strokeWidth="2" 
+                          strokeLinecap="round" 
+                          strokeLinejoin="round"
+                        >
+                          <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                          <circle cx="12" cy="10" r="3" />
+                        </svg>
+                        Select on Map
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => addCurrentLocationToEntry()}
+                        disabled={isGettingLocation}
+                        className="text-sm bg-blue-500 hover:bg-blue-600 text-white font-medium py-1 px-3 rounded disabled:opacity-50 flex items-center"
+                      >
+                        {isGettingLocation ? (
+                          <span>Getting location...</span>
+                        ) : (
+                          <>
+                            <svg 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              className="h-4 w-4 mr-1" 
+                              viewBox="0 0 24 24" 
+                              fill="none" 
+                              stroke="currentColor" 
+                              strokeWidth="2" 
+                              strokeLinecap="round" 
+                              strokeLinejoin="round"
+                            >
+                              <circle cx="12" cy="12" r="10" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                            Use Current Location
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={addSpotifyOnlyEntry}
+                        className="text-sm bg-green-500 hover:bg-green-600 text-white font-medium py-1 px-3 rounded flex items-center"
+                      >
+                        Add Spotify Only
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-gray-500 bg-gray-50 p-6 rounded-lg border border-gray-200 text-center">
-                <p>Add location and Spotify entries to see a preview</p>
-              </div>
-            )}
-          </div>
+                  
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowNewEntryForm(false)}
+                      className="text-sm bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-1 px-3 rounded"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowNewEntryForm(true)}
+                    className="text-sm bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded flex items-center"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5 mr-1"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    Add New Entry
+                  </button>
+                </div>
+              )}
+              
+              {/* Map Picker for editing entries */}
+              {editingState?.showMapPicker && (
+                <div className="mb-4 border border-gray-300 rounded-lg overflow-hidden">
+                  <MapPicker onLocationSelect={handleLocationSelect} />
+                  <div className="p-2 bg-gray-100 text-sm text-gray-600 flex justify-between items-center">
+                    <span>Click anywhere on the map to select a location.</span>
+                    <button
+                      type="button"
+                      onClick={() => setEditingState(null)}
+                      className="text-sm bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-1 px-2 rounded"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {/* Entries preview/editor */}
+              {parsedItems.length > 0 ? (
+                <div className="space-y-6">
+                  {parsedItems.map((item, index) => (
+                    <div key={index} className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+                      <div className="p-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+                        <div className="flex items-center">
+                          <span className="inline-block w-6 h-6 text-center bg-green-500 text-white rounded-full mr-2">
+                            {index + 1}
+                          </span>
+                          <span className="text-sm font-mono">
+                            {item.location.lat !== 0 || item.location.lng !== 0 ? 
+                              `${item.location.lat.toFixed(6)}, ${item.location.lng.toFixed(6)}` :
+                              <span className="text-gray-400 italic">No location set</span>
+                            }
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEditingEntry(index, 'location')}
+                            className="text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            Edit Location
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => startEditingEntry(index, 'spotify')}
+                            className="text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            Edit Track
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeEntry(index)}
+                            className="text-xs text-red-600 hover:text-red-800"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Location editor */}
+                      {editingState?.index === index && editingState?.type === 'location' && !editingState?.showMapPicker && (
+                        <div className="p-3 bg-gray-100 border-b border-gray-200">
+                          <p className="text-sm font-medium mb-2">Select location method:</p>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setEditingState({ ...editingState, showMapPicker: true })}
+                              className="text-sm bg-purple-500 hover:bg-purple-600 text-white font-medium py-1 px-3 rounded flex items-center"
+                            >
+                              <svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                className="h-4 w-4 mr-1" 
+                                viewBox="0 0 24 24" 
+                                fill="none" 
+                                stroke="currentColor" 
+                                strokeWidth="2" 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round"
+                              >
+                                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                                <circle cx="12" cy="10" r="3" />
+                              </svg>
+                              Select on Map
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => addCurrentLocationToEntry(index)}
+                              disabled={isGettingLocation}
+                              className="text-sm bg-blue-500 hover:bg-blue-600 text-white font-medium py-1 px-3 rounded disabled:opacity-50 flex items-center"
+                            >
+                              {isGettingLocation ? (
+                                <span>Getting location...</span>
+                              ) : (
+                                <>
+                                  <svg 
+                                    xmlns="http://www.w3.org/2000/svg" 
+                                    className="h-4 w-4 mr-1" 
+                                    viewBox="0 0 24 24" 
+                                    fill="none" 
+                                    stroke="currentColor" 
+                                    strokeWidth="2" 
+                                    strokeLinecap="round" 
+                                    strokeLinejoin="round"
+                                  >
+                                    <circle cx="12" cy="12" r="10" />
+                                    <circle cx="12" cy="12" r="3" />
+                                  </svg>
+                                  Use Current Location
+                                </>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingState(null)}
+                              className="text-sm bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-1 px-3 rounded"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Spotify URL editor */}
+                      {editingState?.index === index && editingState?.type === 'spotify' && (
+                        <div className="p-3 bg-gray-100 border-b border-gray-200">
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              defaultValue={item.spotifyUrl}
+                              placeholder="https://open.spotify.com/track/..."
+                              className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded"
+                            />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                updateSpotifyUrl(index, input.value);
+                              }}
+                              className="text-sm bg-green-500 hover:bg-green-600 text-white font-medium py-1 px-2 rounded"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingState(null)}
+                              className="text-sm bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-1 px-2 rounded"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Map preview - only show if location is set */}
+                      {(item.location.lat !== 0 || item.location.lng !== 0) && (
+                        <div className="border-b border-gray-200">
+                          <img 
+                            src={getGoogleStaticMapUrl(item.location.lat, item.location.lng, 14, 400, 200)} 
+                            alt={`Map location ${index + 1}`}
+                            className="w-full h-32 object-cover"
+                          />
+                        </div>
+                      )}
+                      
+                      {/* Spotify preview */}
+                      <div className="p-3">
+                        {item.trackId ? (
+                          <>
+                            <div 
+                              className="spotify-embed" 
+                              dangerouslySetInnerHTML={{ 
+                                __html: `<iframe 
+                                  style="border-radius:12px" 
+                                  src="https://open.spotify.com/embed/track/${item.trackId}" 
+                                  width="100%" 
+                                  height="80" 
+                                  frameBorder="0" 
+                                  allowfullscreen="" 
+                                  allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
+                                  loading="lazy">
+                                </iframe>` 
+                              }} 
+                            />
+                          </>
+                        ) : (
+                          <div className="text-sm text-gray-500 p-2 bg-gray-50 rounded">
+                            Invalid Spotify URL
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-gray-500 bg-gray-50 p-6 rounded-lg border border-gray-200 text-center">
+                  <p>Add entries to see a preview</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        <div className="flex justify-end gap-4">
+        <div className="flex justify-end gap-4 mt-8">
           {cancelHref && (
             <Link
               to={cancelHref}
