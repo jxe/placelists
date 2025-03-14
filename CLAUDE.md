@@ -68,3 +68,49 @@ The app uses a codename-based authentication system with these characteristics:
 - User sessions are managed via cookies with the session module in `app/lib/session.ts`
 - All routes under `/placelists` are protected and require authentication
 - Placelists are tied to the user who created them and can only be edited by that user
+
+## Coding Guidelines
+
+### Component Structure
+- Break down complex components into smaller, focused subcomponents
+- For larger components like `PlacelistEditor`, extract reusable parts:
+  - Each interactive element should be its own component where possible
+  - Map functionality should be encapsulated in specific components
+  - Form interfaces should be separated from list display interfaces
+
+### State Management
+- Lift state up to the appropriate level to avoid prop drilling
+- Use local component state for UI interactions
+- Use route loaders for data fetching
+- Keep form state managed within form components when possible
+
+### Authentication Patterns
+- Use the `requireUser` helper from `app/lib/session.ts` in loader functions
+- Check for ownership in both loaders and actions for protected routes
+- Always validate user identity in each route action that modifies data
+- Pass redirect URLs via URLSearchParams when redirecting to login
+
+### Styling Approach
+- Use Tailwind utility classes for component styling
+- Follow mobile-first approach with responsive variants (sm:, md:, etc.)
+- Use semantic color names from the Tailwind palette (green-500, gray-200, etc.)
+- Group related UI elements with consistent spacing (gap-4, space-y-6, etc.)
+
+## Lessons Learned
+
+### Component Organization
+- Embedding interactive elements (like maps) directly within their parent context improves UX
+- Using state to toggle between different interface modes is cleaner than conditional prop passing
+- Splitting large components improves maintainability and reduces errors
+
+### User Experience
+- Dropdown selectors for codename parts are more user-friendly than text input
+- Welcome pages with important information help users remember critical details
+- Field validation and clear error messages improve form usability
+- Clear visual hierarchy with proper spacing improves readability
+
+### Technical Implementation
+- React Router's loaders and actions provide a clean separation of data fetching and mutations
+- Cookie-based sessions work well for authentication without additional complexity
+- Reusing interfaces (like the MapPicker) across different components improves consistency
+- Using proper TypeScript interfaces improves code reliability
