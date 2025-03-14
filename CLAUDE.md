@@ -58,9 +58,10 @@ SpotiSpot is a web application that allows users to create "placelists" - playli
   - `Route.LoaderArgs` provides typed access to request and params
   - `Route.ActionArgs` gives typed parameters for form actions
   - `Route.MetaArgs` provides type safety for metadata functions
-  - `Route.ComponentProps` for typed component props
+  - `Route.ComponentProps` contains typed loaderData and actionData directly
 - Type files (like `app/routes/placelists/+types/index.ts`) are automatically generated and should not be manually edited
-- When referencing loader data, use `useLoaderData<typeof loader>()` for proper typing
+- The new pattern uses destructured data from component props: `function Component({ loaderData, actionData }: Route.ComponentProps)`
+- This replaces the old pattern of using `useLoaderData<typeof loader>()`
 
 ## Development Tips
 
