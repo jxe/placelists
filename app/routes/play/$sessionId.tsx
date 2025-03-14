@@ -41,8 +41,19 @@ export function meta({ data }: Route.MetaArgs) {
     return [{ title: "Session Not Found - SpotiSpot" }]
   }
 
+  const placelist = data.session.placelist
+  const items = placelist.items as Array<{ location: { lat: number; lng: number }; spotifyUrl: string }>
+  const numStops = items.length
+
   return [
-    { title: `Playing ${data.session.placelist.name} - SpotiSpot` },
+    { title: `Playing ${placelist.name} - SpotiSpot` },
+    { name: "description", content: placelist.description || `A location-based music playlist with ${numStops} stops` },
+    { property: "og:title", content: `${placelist.name} | SpotiSpot Adventure` },
+    { property: "og:description", content: `Join this musical journey with ${numStops} locations to discover. Each spot unlocks a new track!` },
+    { property: "og:type", content: "website" },
+    { property: "twitter:card", content: "summary_large_image" },
+    { property: "twitter:title", content: `${placelist.name} | SpotiSpot Adventure` },
+    { property: "twitter:description", content: `Join this musical journey with ${numStops} locations to discover. Each spot unlocks a new track!` }
   ]
 }
 
