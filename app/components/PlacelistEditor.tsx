@@ -11,25 +11,27 @@ import {
   DropdownMenuTrigger
 } from "./ui/dropdown-menu";
 import { MapPin, Music, Trash2, MoreVertical, GripVertical } from "lucide-react";
-import pkg from '@dnd-kit/core';
-const {
+import {
   DndContext,
   closestCenter,
   KeyboardSensor,
   PointerSensor,
   useSensor,
-  useSensors
-} = pkg;
-type DragEndEvent = pkg.DragEndEvent;
+  useSensors,
+  DragStartEvent, 
+  DragOverEvent,
+  DragCancelEvent,
+  DragMoveEvent,
+  DragEndEvent
+} from '@dnd-kit/core';
 
-import sortablePkg from '@dnd-kit/sortable';
-const {
+import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy
-} = sortablePkg;
+} from '@dnd-kit/sortable';
 
 interface PlacelistEditorProps {
   formAction: string;
@@ -65,7 +67,7 @@ function SortableItem({ children, id }: { children: React.ReactNode, id: string 
   } = useSortable({ id });
 
   const style = {
-    transform: transform?.toString(),
+    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
     transition,
     opacity: isDragging ? 0.5 : 1,
     position: 'relative' as const,
