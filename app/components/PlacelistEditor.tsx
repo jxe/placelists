@@ -285,16 +285,37 @@ export default function PlacelistEditor({
   // Function to handle adding or updating a location from map selection
   const handleLocationSelect = (lat: number, lng: number) => {
     if (editingState) {
-      // Update existing entry
-      const updatedItems = [...parsedItems];
-      updatedItems[editingState.index] = {
-        ...updatedItems[editingState.index],
-        location: { lat, lng }
-      };
-      
-      setParsedItems(updatedItems);
-      updateTextFromParsedItems(updatedItems);
-      setEditingState(null);
+      if (editingState.index === -1) {
+        // This is for a new entry from the form
+        if (showNewEntryForm) {
+          // Add location to new entry
+          const newItem: PlacelistItem = {
+            location: { lat, lng },
+            spotifyUrl: newEntrySpotifyUrl,
+            trackId: extractSpotifyTrackId(newEntrySpotifyUrl)
+          };
+          
+          const updatedItems = [...parsedItems, newItem];
+          setParsedItems(updatedItems);
+          updateTextFromParsedItems(updatedItems);
+          
+          // Reset form state
+          setShowNewEntryForm(false);
+          setNewEntrySpotifyUrl('');
+          setEditingState(null);
+        }
+      } else {
+        // Update existing entry
+        const updatedItems = [...parsedItems];
+        updatedItems[editingState.index] = {
+          ...updatedItems[editingState.index],
+          location: { lat, lng }
+        };
+        
+        setParsedItems(updatedItems);
+        updateTextFromParsedItems(updatedItems);
+        setEditingState(null);
+      }
     } else if (showNewEntryForm) {
       // Add location to new entry
       const newItem: PlacelistItem = {
