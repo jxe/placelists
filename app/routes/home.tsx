@@ -1,5 +1,12 @@
-import { Link } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import type { Route } from "./+types/home";
+import { getUser } from "../lib/session";
+
+export async function loader({ request }: Route.LoaderArgs) {
+  // Check if user is logged in
+  const user = await getUser(request);
+  return { user };
+}
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -9,6 +16,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function Home() {
+  const { user } = useLoaderData<typeof loader>();
   return (
     <div className="container mx-auto px-4 py-16 max-w-4xl">
       <div className="text-center mb-16">
@@ -18,18 +26,39 @@ export default function Home() {
           Guide them on a musical journey through physical spaces.
         </p>
         <div className="flex gap-4 justify-center mt-8">
-          <Link 
-            to="/placelists" 
-            className="bg-green-500 hover:bg-green-600 text-white font-medium py-3 px-6 rounded-lg"
-          >
-            Browse Placelists
-          </Link>
-          <Link 
-            to="/placelists/new" 
-            className="bg-white hover:bg-gray-100 text-green-500 border border-green-500 font-medium py-3 px-6 rounded-lg"
-          >
-            Create New Placelist
-          </Link>
+          {user ? (
+            // User is logged in - show links to placelists
+            <>
+              <Link 
+                to="/placelists" 
+                className="bg-green-500 hover:bg-green-600 text-white font-medium py-3 px-6 rounded-lg"
+              >
+                My Placelists
+              </Link>
+              <Link 
+                to="/placelists/new" 
+                className="bg-white hover:bg-gray-100 text-green-500 border border-green-500 font-medium py-3 px-6 rounded-lg"
+              >
+                Create New Placelist
+              </Link>
+            </>
+          ) : (
+            // User is not logged in - show sign in options
+            <>
+              <Link 
+                to="/auth/login" 
+                className="bg-green-500 hover:bg-green-600 text-white font-medium py-3 px-6 rounded-lg"
+              >
+                Sign In
+              </Link>
+              <Link 
+                to="/auth/signup" 
+                className="bg-white hover:bg-gray-100 text-green-500 border border-green-500 font-medium py-3 px-6 rounded-lg"
+              >
+                Create Account
+              </Link>
+            </>
+          )}
         </div>
       </div>
 

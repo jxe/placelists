@@ -4,6 +4,7 @@ import type { Route } from "./+types/$id";
 import { getPlacelist, createSession, deletePlacelist } from "../../lib/db";
 import { extractSpotifyTrackId, getGoogleStaticMapUrl } from "../../lib/utils";
 import { getSpotifyTrackInfo, type SpotifyTrackInfo } from "../../lib/spotify";
+import { getUser, requireUser } from "../../lib/session";
 
 interface EnhancedPlacelistItem {
   location: {
@@ -15,11 +16,19 @@ interface EnhancedPlacelistItem {
   trackInfo?: SpotifyTrackInfo | null;
 }
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ params, request }: Route.LoaderArgs) {
+  // Get the logged-in user
+  const user = await requireUser(request);
+  
   const placelist = await getPlacelist(params.id as string);
   
   if (!placelist) {
     throw new Response("Not Found", { status: 404 });
+  }
+  
+  // Check if the user is the author
+  if (placelist.authorId !== user.id) {
+    throw new Response("Unauthorized: You can only view your own placelists", { status: 403 });
   }
   
   // Enhance items with Spotify track IDs
@@ -42,14 +51,22 @@ export async function loader({ params }: Route.LoaderArgs) {
     });
   }
   
-  return { placelist, enhancedItems };
+  return { placelist, enhancedItems, user };
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
+  // Get the logged-in user
+  const user = await requireUser(request);
+  
   const placelist = await getPlacelist(params.id as string);
   
   if (!placelist) {
     throw new Response("Not Found", { status: 404 });
+  }
+  
+  // Check if the user is the author
+  if (placelist.authorId !== user.id) {
+    throw new Response("Unauthorized: You can only modify your own placelists", { status: 403 });
   }
   
   const formData = await request.formData();

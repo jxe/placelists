@@ -3,12 +3,21 @@ import type { Route } from "./+types/$id.edit";
 import { getPlacelist, updatePlacelist } from "../../lib/db";
 import { parsePlacelistText } from "../../lib/utils";
 import PlacelistEditor from "../../components/PlacelistEditor";
+import { requireUser } from "../../lib/session";
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ request, params }: Route.LoaderArgs) {
+  // Get the logged-in user
+  const user = await requireUser(request);
+  
   const placelist = await getPlacelist(params.id as string);
   
   if (!placelist) {
     throw new Response("Not Found", { status: 404 });
+  }
+  
+  // Check if the user is the author
+  if (placelist.authorId !== user.id) {
+    throw new Response("Unauthorized: You can only edit your own placelists", { status: 403 });
   }
   
   // Convert the items array to text format
@@ -17,14 +26,22 @@ export async function loader({ params }: Route.LoaderArgs) {
     `${item.location.lat},${item.location.lng}\n${item.spotifyUrl}`
   ).join('\n');
   
-  return { placelist, placelistText };
+  return { placelist, placelistText, user };
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
+  // Get the logged-in user
+  const user = await requireUser(request);
+  
   const placelist = await getPlacelist(params.id as string);
   
   if (!placelist) {
     throw new Response("Not Found", { status: 404 });
+  }
+  
+  // Check if the user is the author
+  if (placelist.authorId !== user.id) {
+    throw new Response("Unauthorized: You can only edit your own placelists", { status: 403 });
   }
   
   const formData = await request.formData();
