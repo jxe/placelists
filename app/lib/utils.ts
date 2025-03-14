@@ -102,12 +102,13 @@ export function extractSpotifyTrackId(spotifyUrl: string): string | null {
 /**
  * Generates a Google Static Maps URL for a given location
  */
-export function getGoogleStaticMapUrl(lat: number, lng: number, zoom: number = 15, width: number = 300, height: number = 200): string {
+export function getGoogleStaticMapUrl(lat: number, lng: number, zoom: number = 14, width: number = 600, height: number = 300): string {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   
   if (apiKey) {
     // If API key is available, use the Google Maps API
-    return `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${zoom}&size=${width}x${height}&markers=color:red%7C${lat},${lng}&key=${apiKey}`;
+    // Added scale=2 for higher resolution images
+    return `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${zoom}&size=${width}x${height}&scale=2&markers=color:red%7C${lat},${lng}&key=${apiKey}`;
   } else {
     // Fallback to placeholder if no API key is provided
     return `https://placehold.co/${width}x${height}?text=Map+Location:+${lat.toFixed(4)},${lng.toFixed(4)}`;
