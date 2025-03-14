@@ -25,6 +25,7 @@ This file contains useful information about the SpotiSpot project to help with d
 
 SpotiSpot is a web application that allows users to create "placelists" - playlists of MP3s tied to specific geographic locations. Key features include:
 
+- User authentication with memorable codename system (no passwords)
 - Create, view, edit, and delete placelists
 - Each placelist contains alternating latitude/longitude coordinates and Spotify links
 - Generate shareable player URLs that use geolocation to guide users to each location
@@ -37,8 +38,10 @@ SpotiSpot is a web application that allows users to create "placelists" - playli
 - The app uses React Router v7 with the file-based routing system
 - Geolocation functions are located in `app/lib/utils.ts`
 - Database interactions are abstracted in `app/lib/db.ts`
-- The data structure for placelists is defined in `schema.prisma`
+- Authentication logic is in `app/lib/session.ts`
+- The data structure for placelists and users is defined in `schema.prisma`
 - The player compass interface is in `/app/routes/play/$sessionId.tsx`
+- Authentication routes are in `/app/routes/auth/`
 - The PlacelistEditor component supports:
   - Text mode: raw text editing of placelist coordinates and Spotify URLs
   - Preview mode: visual editor with drag-and-drop reordering, map location picker
@@ -53,3 +56,15 @@ SpotiSpot is a web application that allows users to create "placelists" - playli
 - To modify the database schema, update `schema.prisma` and run `npx prisma db push`
 - For location selection, you'll need a valid Google Maps API key in your environment variables (GOOGLE_MAPS_API_KEY)
 - When using CommonJS modules like @dnd-kit, import with wildcard syntax: `import * as dndKit from '@dnd-kit/core'`
+
+## Authentication System
+
+The app uses a codename-based authentication system with these characteristics:
+
+- Users authenticate using a three-part codename (two adjectives + animal noun)
+- Codenames are like "Fluffy Ornate Bunny" - easy to remember, no passwords needed
+- The login screen uses dropdown selectors for each part of the codename
+- New users get a randomly generated codename shown on the welcome screen
+- User sessions are managed via cookies with the session module in `app/lib/session.ts`
+- All routes under `/placelists` are protected and require authentication
+- Placelists are tied to the user who created them and can only be edited by that user
