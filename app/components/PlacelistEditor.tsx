@@ -3,6 +3,14 @@ import { Form, Link } from "react-router";
 import { extractSpotifyTrackId } from "../lib/utils";
 import { getGoogleStaticMapUrl } from "../lib/utils";
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from "./ui/dropdown-menu";
+import { MapPin, Music, Trash2, MoreVertical } from "lucide-react";
 
 interface PlacelistEditorProps {
   formAction: string;
@@ -622,29 +630,29 @@ https://open.spotify.com/track/0GswOA5NnzbGuC7WWjmCck"
                             }
                           </span>
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEditingEntry(index, 'location')}
-                            className="text-xs text-blue-600 hover:text-blue-800"
-                          >
-                            Edit Location
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => startEditingEntry(index, 'spotify')}
-                            className="text-xs text-blue-600 hover:text-blue-800"
-                          >
-                            Edit Track
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => removeEntry(index)}
-                            className="text-xs text-red-600 hover:text-red-800"
-                          >
-                            Remove
-                          </button>
-                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-200 focus-visible:outline-none">
+                            <MoreVertical className="h-4 w-4" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => startEditingEntry(index, 'location')}>
+                              <MapPin className="mr-2 h-4 w-4 text-blue-600" />
+                              <span>Edit Location</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => startEditingEntry(index, 'spotify')}>
+                              <Music className="mr-2 h-4 w-4 text-blue-600" />
+                              <span>Edit Track</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem 
+                              onClick={() => removeEntry(index)}
+                              className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              <span>Remove</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                       
                       {/* Location editor */}
