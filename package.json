@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@prisma/extension-accelerate": "^1.2.2",
+    "@react-google-maps/api": "^2.20.6",
     "@react-router/node": "^7.3.0",
     "@react-router/serve": "^7.3.0",
     "@vercel/react-router": "^1.1.0",

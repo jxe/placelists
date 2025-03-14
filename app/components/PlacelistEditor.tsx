@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Form, Link } from "react-router";
 import { extractSpotifyTrackId } from "../lib/utils";
 import { getGoogleStaticMapUrl } from "../lib/utils";
+import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 
 interface PlacelistEditorProps {
   formAction: string;
@@ -25,6 +26,86 @@ interface PlacelistItem {
   trackId?: string | null;
 }
 
+const MapPicker = ({ onLocationSelect }: { onLocationSelect: (lat: number, lng: number) => void }) => {
+  const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [marker, setMarker] = useState<google.maps.LatLngLiteral | null>(null);
+  const [center, setCenter] = useState<google.maps.LatLngLiteral>({ lat: 37.7749, lng: -122.4194 });
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || ''
+  });
+
+  // Try to get user's current location when component mounts
+  useEffect(() => {
+    if (navigator.geolocation) {
+      setIsLoadingLocation(true);
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setCenter({ lat: latitude, lng: longitude });
+          setIsLoadingLocation(false);
+        },
+        (error) => {
+          console.error("Error getting location for map:", error);
+          setIsLoadingLocation(false);
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 0,
+          timeout: 5000
+        }
+      );
+    } else {
+      setIsLoadingLocation(false);
+    }
+  }, []);
+
+  const handleMapClick = (e: google.maps.MapMouseEvent) => {
+    if (!e.latLng) return;
+    
+    const lat = e.latLng.lat();
+    const lng = e.latLng.lng();
+    setMarker({ lat, lng });
+    onLocationSelect(lat, lng);
+  };
+
+  const mapContainerStyle = {
+    width: '100%',
+    height: '300px'
+  };
+
+  // Options to customize the map
+  const mapOptions: google.maps.MapOptions = {
+    streetViewControl: false,   // Disable Street View (pegman)
+    mapTypeControl: false,      // Simplify the UI by removing the map type selector
+    fullscreenControl: false,   // Remove fullscreen button for cleaner UI
+    zoom: 16,                  // Tighter zoom (higher number = closer zoom)
+    scrollwheel: true,          // Enable zoom with scroll wheel
+    disableDefaultUI: false,    // Keep some UI elements
+    zoomControl: true,          // Keep zoom controls
+  };
+
+  if (!isLoaded) return <div className="h-[300px] bg-gray-100 flex items-center justify-center">Loading Maps...</div>;
+  
+  if (isLoadingLocation) {
+    return <div className="h-[300px] bg-gray-100 flex items-center justify-center">Getting your location...</div>;
+  }
+
+  return (
+    <GoogleMap
+      mapContainerStyle={mapContainerStyle}
+      center={center}
+      options={mapOptions}
+      onClick={handleMapClick}
+      onLoad={map => setMap(map)}
+    >
+      {marker && <Marker position={marker} />}
+    </GoogleMap>
+  );
+};
+
 export default function PlacelistEditor({
   formAction,
   defaultValues,
@@ -35,6 +116,7 @@ export default function PlacelistEditor({
 }: PlacelistEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [showMapPicker, setShowMapPicker] = useState(false);
   const [parsedItems, setParsedItems] = useState<PlacelistItem[]>([]);
   const [textAreaValue, setTextAreaValue] = useState(defaultValues.placelistText);
 
@@ -113,6 +195,33 @@ export default function PlacelistEditor({
       console.error("Error parsing placelist text:", err);
     }
   }, [textAreaValue]);
+
+  // Function to add selected location from map to the textarea
+  const addSelectedLocation = (lat: number, lng: number) => {
+    const locationString = `${lat},${lng}\n`;
+    
+    if (textareaRef.current) {
+      const textArea = textareaRef.current;
+      const currentValue = textArea.value;
+      
+      // If there's already text, add a new line if needed
+      const newValue = currentValue 
+        ? (currentValue.endsWith('\n') ? currentValue : currentValue + '\n') + locationString
+        : locationString;
+        
+      textArea.value = newValue;
+      setTextAreaValue(newValue);
+      
+      // Set focus to textarea and position cursor at end
+      textArea.focus();
+      textArea.setSelectionRange(newValue.length, newValue.length);
+    }
+  };
+
+  // Function to toggle the map picker
+  const toggleMapPicker = () => {
+    setShowMapPicker(!showMapPicker);
+  };
 
   // Function to add current location to the textarea
   const addCurrentLocation = () => {
@@ -207,34 +316,64 @@ export default function PlacelistEditor({
               <label htmlFor="placelistText" className="block text-sm font-medium">
                 Placelist Content
               </label>
-              <button
-                type="button"
-                onClick={addCurrentLocation}
-                disabled={isGettingLocation}
-                className="text-sm bg-blue-500 hover:bg-blue-600 text-white font-medium py-1 px-3 rounded disabled:opacity-50 flex items-center"
-              >
-                {isGettingLocation ? (
-                  <span>Getting location...</span>
-                ) : (
-                  <>
-                    <svg 
-                      xmlns="http://www.w3.org/2000/svg" 
-                      className="h-4 w-4 mr-1" 
-                      viewBox="0 0 24 24" 
-                      fill="none" 
-                      stroke="currentColor" 
-                      strokeWidth="2" 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round"
-                    >
-                      <circle cx="12" cy="12" r="10" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                    Add Current Location
-                  </>
-                )}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={toggleMapPicker}
+                  className={`text-sm ${showMapPicker ? 'bg-green-500 hover:bg-green-600' : 'bg-purple-500 hover:bg-purple-600'} text-white font-medium py-1 px-3 rounded flex items-center`}
+                >
+                  <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    className="h-4 w-4 mr-1" 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    strokeWidth="2" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round"
+                  >
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                  {showMapPicker ? 'Hide Map Picker' : 'Use Map Picker'}
+                </button>
+                <button
+                  type="button"
+                  onClick={addCurrentLocation}
+                  disabled={isGettingLocation}
+                  className="text-sm bg-blue-500 hover:bg-blue-600 text-white font-medium py-1 px-3 rounded disabled:opacity-50 flex items-center"
+                >
+                  {isGettingLocation ? (
+                    <span>Getting location...</span>
+                  ) : (
+                    <>
+                      <svg 
+                        xmlns="http://www.w3.org/2000/svg" 
+                        className="h-4 w-4 mr-1" 
+                        viewBox="0 0 24 24" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        strokeWidth="2" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round"
+                      >
+                        <circle cx="12" cy="12" r="10" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                      Add Current Location
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
+            {showMapPicker && (
+              <div className="mb-4 border border-gray-300 rounded-lg overflow-hidden">
+                <MapPicker onLocationSelect={addSelectedLocation} />
+                <div className="p-2 bg-gray-100 text-sm text-gray-600">
+                  Click anywhere on the map to select a location. The coordinates will be added to your placelist.
+                </div>
+              </div>
+            )}
             <div className="mb-2 text-sm text-gray-600">
               <p>Enter alternating lines of:</p>
               <ol className="list-decimal list-inside mt-1 ml-4 space-y-1">
