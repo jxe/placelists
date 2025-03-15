@@ -175,3 +175,40 @@ export async function getUserSessions(userId: string) {
     orderBy: { updatedAt: 'desc' }
   })
 }
+
+// Get all user sessions grouped by completion status
+export async function getUserSessionsGrouped(userId: string) {
+  // Get all user's placelists to know the total items count
+  const userSessions = await prisma.userSession.findMany({
+    where: { userId },
+    include: { 
+      placelist: {
+        include: {
+          author: true
+        }
+      }
+    },
+    orderBy: { updatedAt: 'desc' }
+  });
+
+  // Group sessions based on completion status
+  const inProgressSessions = [];
+  const completedSessions = [];
+
+  for (const session of userSessions) {
+    // Get the items length to determine if the session is complete
+    const items = session.placelist.items as any[];
+    const totalItems = items.length;
+    
+    if (session.progress >= totalItems) {
+      completedSessions.push(session);
+    } else {
+      inProgressSessions.push(session);
+    }
+  }
+
+  return {
+    inProgressSessions,
+    completedSessions
+  };
+}
