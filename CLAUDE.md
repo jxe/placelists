@@ -116,12 +116,18 @@ The app uses a codename-based authentication system with these characteristics:
 - Embedding interactive elements (like maps) directly within their parent context improves UX
 - Using state to toggle between different interface modes is cleaner than conditional prop passing
 - Splitting large components improves maintainability and reduces errors
+- Extracting parser logic to separate modules increases code maintainability and allows for better error handling
+- Using multiple fetchers for different actions within the same component allows for parallel operations
 
 ### User Experience
 - Dropdown selectors for codename parts are more user-friendly than text input
 - Welcome pages with important information help users remember critical details
 - Field validation and clear error messages improve form usability
 - Clear visual hierarchy with proper spacing improves readability
+- Progress bars and completion percentages provide immediate visual feedback on session status
+- Color-coding different statuses (in-progress, completed, created) improves scanability
+- Statistics about usage provide valuable feedback to content creators
+- Clearly marked affordances like "Save Progress" buttons improve user retention
 
 ### Technical Implementation
 - React Router's loaders and actions provide a clean separation of data fetching and mutations
@@ -131,3 +137,15 @@ The app uses a codename-based authentication system with these characteristics:
 - Using proper TypeScript interfaces improves code reliability
 - File-based routing with automatic type generation significantly reduces boilerplate code
 - The `+types` directory structure should be allowed to autogenerate and not manually edited
+- YAML provides a more readable and maintainable format for complex nested data structures
+- Implementing fallback parsing strategies ensures backward compatibility
+- Adding proper null/undefined handling with Boolean() and optional chaining improves type safety
+- Computing statistics as part of the database query is more efficient than client-side calculations
+
+### Data Structure Patterns
+- Sessions linked to users allows for progress tracking across devices
+- Storing play history enables better analytics and content improvement
+- Computing session statistics (completed, in-progress, saved) provides valuable metrics
+- Using schedule restrictions creates time-based engagement opportunities
+- Separating parsing logic from UI components creates cleaner, more testable code
+- Providing multiple data formats (YAML, traditional) improves flexibility
