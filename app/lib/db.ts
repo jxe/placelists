@@ -103,11 +103,50 @@ export async function getAllPlacelists() {
 }
 
 export async function getPlacelistsByUser(userId: string) {
-  return prisma.placelist.findMany({
+  // Get placelists created by this user
+  const placelists = await prisma.placelist.findMany({
     where: { authorId: userId },
     orderBy: { createdAt: "desc" },
-    include: { author: true }
-  })
+    include: { 
+      author: true,
+      sessions: true 
+    }
+  });
+
+  // For each placelist, count the sessions by status
+  return placelists.map(placelist => {
+    const items = placelist.items as any[];
+    const totalItems = items.length;
+    
+    // Count sessions by status
+    const sessionStats = {
+      total: placelist.sessions.length,
+      completed: 0,
+      inProgress: 0,
+      saved: 0
+    };
+    
+    // Calculate stats for each session
+    placelist.sessions.forEach(session => {
+      // Count sessions with a user ID as saved
+      if (session.userId) {
+        sessionStats.saved++;
+      }
+      
+      // Count completed vs. in-progress
+      if (session.progress >= totalItems) {
+        sessionStats.completed++;
+      } else if (session.progress > 0) {
+        sessionStats.inProgress++;
+      }
+    });
+    
+    // Return placelist with stats
+    return {
+      ...placelist,
+      sessionStats
+    };
+  });
 }
 
 export async function deletePlacelist(id: string) {

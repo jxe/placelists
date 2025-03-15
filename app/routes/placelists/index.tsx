@@ -29,6 +29,28 @@ export function meta() {
   ]
 }
 
+// Define interfaces for the sessionStats
+interface SessionStats {
+  total: number;
+  completed: number;
+  inProgress: number;
+  saved: number;
+}
+
+// Interface for placelist with stats
+interface PlacelistWithStats {
+  id: string;
+  name: string;
+  description?: string | null;
+  items: any[];
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  author: any | null;
+  authorId: string | null;
+  sessions: any[];
+  sessionStats: SessionStats;
+}
+
 export default function PlacelistsIndex({ loaderData: { user, placelists, inProgressSessions, completedSessions } }: Route.ComponentProps) {
   const hasAnyContent = inProgressSessions.length > 0 || completedSessions.length > 0 || placelists.length > 0;
 
@@ -193,6 +215,8 @@ export default function PlacelistsIndex({ loaderData: { user, placelists, inProg
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {placelists.map((placelist) => {
                   const items = placelist.items as Array<{ location: { lat: number; lng: number }; spotifyUrl: string }>;
+                  // Use optional chaining for sessionStats to be safe
+                  const stats = placelist.sessionStats || { total: 0, completed: 0, inProgress: 0, saved: 0 };
                   return (
                     <Link
                       key={placelist.id}
@@ -210,9 +234,40 @@ export default function PlacelistsIndex({ loaderData: { user, placelists, inProg
                         <p className="text-gray-700 mb-4 line-clamp-2">{placelist.description}</p>
                       )}
                       
-                      <div className="flex justify-between items-center text-sm text-gray-500">
-                        <span>{items.length} locations</span>
-                        <span>Created {new Date(placelist.createdAt).toLocaleDateString()}</span>
+                      <div className="mb-3">
+                        <div className="flex justify-between items-center text-sm text-gray-500 mb-2">
+                          <span>{items.length} locations</span>
+                          <span>Created {new Date(placelist.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        
+                        {/* Session statistics */}
+                        {stats.total > 0 ? (
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            <div className="px-2 py-1 text-xs bg-gray-100 rounded-md flex items-center">
+                              <span className="font-medium mr-1">Total:</span> {stats.total}
+                            </div>
+                            
+                            {stats.completed > 0 && (
+                              <div className="px-2 py-1 text-xs bg-green-50 text-green-700 rounded-md flex items-center">
+                                <span className="font-medium mr-1">Completed:</span> {stats.completed}
+                              </div>
+                            )}
+                            
+                            {stats.inProgress > 0 && (
+                              <div className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-md flex items-center">
+                                <span className="font-medium mr-1">In Progress:</span> {stats.inProgress}
+                              </div>
+                            )}
+                            
+                            {stats.saved > 0 && (
+                              <div className="px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded-md flex items-center">
+                                <span className="font-medium mr-1">Saved:</span> {stats.saved}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-500 italic mt-2">No active sessions yet</div>
+                        )}
                       </div>
                     </Link>
                   );
