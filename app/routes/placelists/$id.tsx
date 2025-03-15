@@ -137,6 +137,46 @@ export default function PlacelistDetail() {
         </div>
       </div>
       
+      {/* User Sessions Section */}
+      {(placelist.activeSessions?.length > 0 || placelist.completedSessions?.length > 0) && (
+        <div className="mb-8">
+          {placelist.activeSessions?.length > 0 && (
+            <div className="bg-blue-50 p-6 rounded-lg border border-blue-200 mb-4">
+              <h2 className="text-xl font-semibold mb-2">Currently Being Played By</h2>
+              <ul className="space-y-2">
+                {placelist.activeSessions.map(session => {
+                  // Calculate completion percentage
+                  const items = placelist.items as any[];
+                  const totalItems = items.length;
+                  const percentage = Math.round((session.progress / totalItems) * 100);
+                  
+                  return (
+                    <li key={session.id} className="flex items-center">
+                      <div className="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
+                      <span>{session.user?.name} - {percentage}% complete</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          
+          {placelist.completedSessions?.length > 0 && (
+            <div className="bg-green-50 p-6 rounded-lg border border-green-200 mb-4">
+              <h2 className="text-xl font-semibold mb-2">Completed By</h2>
+              <ul className="space-y-2">
+                {placelist.completedSessions.map(session => (
+                  <li key={session.id} className="flex items-center">
+                    <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+                    <span>{session.user?.name} - {new Date(session.updatedAt).toLocaleDateString()}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="mb-8">
         <h2 className="text-xl font-semibold mb-4">Locations ({enhancedItems.length})</h2>
         <div className="bg-gray-50 p-6 rounded-lg">
