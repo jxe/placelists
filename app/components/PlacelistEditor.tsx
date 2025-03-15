@@ -2,6 +2,11 @@ import { useState, useRef, useEffect } from "react";
 import { Form, Link } from "react-router";
 import { extractSpotifyTrackId } from "../lib/utils";
 import { getGoogleStaticMapUrl } from "../lib/utils";
+import { 
+  parsePlacelistText, 
+  formatAsYaml
+} from "../lib/placelistParsers";
+import type { PlacelistItem } from "../lib/placelistParsers";
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 import { 
   DropdownMenu,
@@ -47,19 +52,12 @@ interface PlacelistEditorProps {
   cancelHref?: string;
 }
 
-interface PlacelistItem {
-  location: {
-    lat: number;
-    lng: number;
-  };
-  spotifyUrl: string;
-  trackId?: string | null;
-}
+// PlacelistItem interface is now imported from "../lib/placelistParsers"
 
 // Used to track which item is being edited
 interface EditingState {
   index: number;
-  type: 'location' | 'spotify' | null;
+  type: 'location' | 'spotify' | 'schedule' | null;
 }
 
 // Sortable item wrapper for drag and drop
@@ -309,18 +307,20 @@ const PlacelistEntry = ({
   onLocationSelect,
   onAddCurrentLocation,
   onCancelEdit,
-  onUpdateSpotify
+  onUpdateSpotify,
+  onUpdateSchedule
 }: {
   item: PlacelistItem;
   index: number;
   editingState: EditingState | null;
   isGettingLocation: boolean;
-  onEdit: (index: number, type: 'location' | 'spotify') => void;
+  onEdit: (index: number, type: 'location' | 'spotify' | 'schedule') => void;
   onRemove: (index: number) => void;
   onLocationSelect: (index: number, lat: number, lng: number) => void;
   onAddCurrentLocation: (index: number) => void;
   onCancelEdit: () => void;
   onUpdateSpotify: (index: number, url: string) => void;
+  onUpdateSchedule: (index: number, schedule: string | undefined) => void;
 }) => {
   const [showMap, setShowMap] = useState(false);
   
@@ -350,6 +350,12 @@ const PlacelistEntry = ({
             <DropdownMenuItem onClick={() => onEdit(index, 'spotify')}>
               <Music className="mr-2 h-4 w-4 text-blue-600" />
               <span>Edit Track</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onEdit(index, 'schedule')}>
+              <svg xmlns="http://www.w3.org/2000/svg" className="mr-2 h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Set Opening Hours</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem 
@@ -467,6 +473,54 @@ const PlacelistEntry = ({
         </div>
       )}
       
+      {/* Schedule editor */}
+      {editingState?.index === index && editingState?.type === 'schedule' && (
+        <div className="p-3 bg-gray-100 border-b border-gray-200">
+          <div className="mb-2">
+            <label className="block text-sm font-medium mb-1">
+              Opening Hours (optional)
+            </label>
+            <input
+              type="text"
+              defaultValue={item.onlyDuring || ''}
+              placeholder="e.g., 9-5 (MO-FR); 10-3 (SA-SU) PST"
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+            />
+          </div>
+          <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded mb-2">
+            <p className="font-semibold mb-1">Format:</p>
+            <code>time-range (days) timezone</code>
+            <ul className="list-disc list-inside mt-1 ml-2 space-y-1">
+              <li>Time: 9-5, 10:30-18:00, 11am-8pm, 9-18:30</li>
+              <li>Days: MO, TU, WE, TH, FR, SA, SU (can use ranges like MO-FR)</li>
+              <li>Multiple ranges: separate with semicolons, e.g., 9-5 (MO-FR); 10-3 (SA-SU)</li>
+              <li>Timezone: optional 3-4 letter code, e.g., EST, PST, UTC</li>
+            </ul>
+            <p className="mt-1">Example: 9am-5:30pm (MO-FR); 11-3 (SA) EST</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                const input = e.currentTarget.parentElement?.previousElementSibling?.previousElementSibling?.querySelector('input') as HTMLInputElement;
+                const schedule = input.value.trim();
+                onUpdateSchedule(index, schedule || undefined);
+              }}
+              className="text-sm bg-green-500 hover:bg-green-600 text-white font-medium py-1 px-2 rounded"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={onCancelEdit}
+              className="text-sm bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-1 px-2 rounded"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      
       {/* Map preview - only show if location is set */}
       {(item.location.lat !== 0 || item.location.lng !== 0) && (
         <div className="border-b border-gray-200">
@@ -475,6 +529,12 @@ const PlacelistEntry = ({
             alt={`Map location ${index + 1}`}
             className="w-full h-40 object-cover"
           />
+          {item.onlyDuring && (
+            <div className="bg-blue-50 p-2 text-sm border-t border-blue-100">
+              <span className="font-medium text-blue-800">Opening hours: </span>
+              <span className="text-blue-700">{item.onlyDuring}</span>
+            </div>
+          )}
         </div>
       )}
       
@@ -658,7 +718,7 @@ export default function PlacelistEditor({
   const [parsedItems, setParsedItems] = useState<PlacelistItem[]>([]);
   const [textAreaValue, setTextAreaValue] = useState(defaultValues.placelistText);
 
-  // Parse the textarea content into structured items
+  // Parse the textarea content into structured items using the parser with fallback
   useEffect(() => {
     if (!textAreaValue) {
       setParsedItems([]);
@@ -666,68 +726,8 @@ export default function PlacelistEditor({
     }
     
     try {
-      // Filter out empty lines and collect non-empty lines
-      const filteredLines = textAreaValue.split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-      
-      const items: PlacelistItem[] = [];
-      let currentLocation: { lat: number; lng: number } | null = null;
-      
-      // Process each non-empty line
-      for (let i = 0; i < filteredLines.length; i++) {
-        const line = filteredLines[i];
-        
-        // Check if line looks like a location (contains comma and numbers)
-        if (line.includes(",") && /^-?\d+\.?\d*,-?\d+\.?\d*$/.test(line)) {
-          try {
-            // Parse location
-            const [lat, lng] = line.split(",").map(Number);
-            if (!isNaN(lat) && !isNaN(lng)) {
-              // Check if next line is a Spotify URL
-              if (i + 1 < filteredLines.length) {
-                const nextLine = filteredLines[i + 1];
-                
-                if (nextLine.includes("spotify.com") || nextLine.includes("spotify:track:")) {
-                  const trackId = extractSpotifyTrackId(nextLine);
-                  
-                  items.push({
-                    location: { lat, lng },
-                    spotifyUrl: nextLine,
-                    trackId
-                  });
-                  
-                  // Skip the Spotify URL line in the next iteration
-                  i++;
-                } else {
-                  // Store current location for potential matching with a later Spotify URL
-                  currentLocation = { lat, lng };
-                }
-              } else {
-                // This is the last line and it's a location
-                currentLocation = { lat, lng };
-              }
-            }
-          } catch (err) {
-            // Invalid location format
-            continue;
-          }
-        } 
-        // If line is a Spotify URL and we have a pending location
-        else if (currentLocation && (line.includes("spotify.com") || line.includes("spotify:track:"))) {
-          const trackId = extractSpotifyTrackId(line);
-          
-          items.push({
-            location: currentLocation,
-            spotifyUrl: line,
-            trackId
-          });
-          
-          // Reset the current location
-          currentLocation = null;
-        }
-      }
-      
+      // Use the parser with fallback (YAML first, then traditional format)
+      const items = parsePlacelistText(textAreaValue);
       setParsedItems(items);
     } catch (err) {
       console.error("Error parsing placelist text:", err);
@@ -736,10 +736,8 @@ export default function PlacelistEditor({
 
   // Function to update the text representation based on parsedItems
   const updateTextFromParsedItems = (items: PlacelistItem[]) => {
-    const newText = items.map(item => 
-      `${item.location?.lat || ''},${item.location?.lng || ''}\n${item.spotifyUrl || ''}`
-    ).join('\n');
-    
+    // Format items as YAML
+    const newText = formatAsYaml(items);
     setTextAreaValue(newText);
   };
 
@@ -871,6 +869,25 @@ export default function PlacelistEditor({
       spotifyUrl: url,
       trackId: extractSpotifyTrackId(url)
     };
+    
+    setParsedItems(updatedItems);
+    updateTextFromParsedItems(updatedItems);
+    setEditingState(null);
+  };
+  
+  // Function to update schedule for an entry
+  const updateSchedule = (index: number, schedule: string | undefined) => {
+    const updatedItems = [...parsedItems];
+    if (schedule) {
+      updatedItems[index] = {
+        ...updatedItems[index],
+        onlyDuring: schedule
+      };
+    } else {
+      // Remove the onlyDuring property if no schedule
+      const { onlyDuring, ...rest } = updatedItems[index];
+      updatedItems[index] = rest;
+    }
     
     setParsedItems(updatedItems);
     updateTextFromParsedItems(updatedItems);
@@ -1016,7 +1033,19 @@ export default function PlacelistEditor({
           {activeTab === 'text' && (
             <div>
               <div className="mb-2 text-sm text-gray-600">
-                <p>Enter alternating lines of:</p>
+                <p>Enter placelist data in YAML format:</p>
+                <pre className="mt-1 ml-4 p-2 bg-gray-100 rounded text-xs">
+- location:
+    lat: 37.7749
+    lng: -122.4194
+  spotifyUrl: https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT
+  onlyDuring: 9am-5pm (MO-FR) PST
+- location:
+    lat: 37.7833
+    lng: -122.4167
+  spotifyUrl: https://open.spotify.com/track/0GswOA5NnzbGuC7WWjmCck
+                </pre>
+                <p className="mt-2">Or use the legacy format of alternating lines:</p>
                 <ol className="list-decimal list-inside mt-1 ml-4 space-y-1">
                   <li>Latitude,Longitude (e.g., "37.7749,-122.4194")</li>
                   <li>Spotify link (e.g., "https://open.spotify.com/track/...")</li>
@@ -1027,10 +1056,15 @@ export default function PlacelistEditor({
                 value={textAreaValue}
                 onChange={(e) => setTextAreaValue(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 h-72 font-mono"
-                placeholder="37.7749,-122.4194
-https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT
-37.7833,-122.4167
-https://open.spotify.com/track/0GswOA5NnzbGuC7WWjmCck"
+                placeholder="- location:
+    lat: 37.7749
+    lng: -122.4194
+  spotifyUrl: https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT
+  onlyDuring: 9am-5pm (MO-FR) PST
+- location:
+    lat: 37.7833
+    lng: -122.4167
+  spotifyUrl: https://open.spotify.com/track/0GswOA5NnzbGuC7WWjmCck"
               />
               {errors?.placelistText && (
                 <p className="text-red-500 text-sm mt-1">{errors.placelistText}</p>
@@ -1066,6 +1100,7 @@ https://open.spotify.com/track/0GswOA5NnzbGuC7WWjmCck"
                             onAddCurrentLocation={addCurrentLocationToEntry}
                             onCancelEdit={() => setEditingState(null)}
                             onUpdateSpotify={updateSpotifyUrl}
+                            onUpdateSchedule={updateSchedule}
                           />
                         </SortableItem>
                       ))}

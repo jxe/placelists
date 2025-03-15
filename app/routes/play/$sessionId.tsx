@@ -2,7 +2,7 @@ import { useLoaderData, useFetcher } from "react-router"
 import { useEffect, useState, useRef } from "react"
 import type { Route } from "./+types/$sessionId"
 import { getSession, updateSessionProgress } from "../../lib/db"
-import { calculateDistance, calculateBearing, getCompassDirection } from "../../lib/utils"
+import { calculateDistance, calculateBearing, getCompassDirection, getScheduleStatus } from "../../lib/utils"
 
 export async function loader({ params }: Route.LoaderArgs) {
   const session = await getSession(params.sessionId as string)
@@ -42,7 +42,11 @@ export function meta({ data }: Route.MetaArgs) {
   }
 
   const placelist = data.session.placelist
-  const items = placelist.items as Array<{ location: { lat: number; lng: number }; spotifyUrl: string }>
+  const items = placelist.items as Array<{ 
+    location: { lat: number; lng: number }; 
+    spotifyUrl: string;
+    onlyDuring?: string;
+  }>
   const numStops = items.length
 
   return [
@@ -68,7 +72,11 @@ interface GeoPosition {
 export default function Player() {
   const { session } = useLoaderData<typeof loader>()
   const placelist = session.placelist
-  const items = placelist.items as Array<{ location: { lat: number; lng: number }; spotifyUrl: string }>
+  const items = placelist.items as Array<{ 
+    location: { lat: number; lng: number }; 
+    spotifyUrl: string;
+    onlyDuring?: string;
+  }>
 
   const [position, setPosition] = useState<GeoPosition | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -79,6 +87,11 @@ export default function Player() {
   const [unlocking, setUnlocking] = useState(false)
   const [deviceOrientation, setDeviceOrientation] = useState<number | null>(null)
   const [compassDirection, setCompassDirection] = useState<string>("N")
+  const [scheduleStatus, setScheduleStatus] = useState<{ 
+    open: boolean; 
+    nextOpenIn?: number | null;
+    timeZone?: string;
+  } | null>(null)
 
   const watchId = useRef<number | null>(null)
   const fetcher = useFetcher()
@@ -172,9 +185,38 @@ export default function Player() {
           )
           setBearing(bear)
 
-          // Auto unlock if within 25 meters
-          if (dist <= 25 && !unlocking) {
-            unlockNext()
+          // Always check schedule status for current item
+          const currentItemData = items[currentItem];
+          
+          // Check if current location has schedule restrictions
+          if (currentItemData.onlyDuring) {
+            try {
+              console.log("Found location with schedule:", currentItemData.onlyDuring);
+              // Check the schedule status
+              const status = getScheduleStatus(new Date(), currentItemData.onlyDuring);
+              console.log("Schedule status:", status);
+              setScheduleStatus(status);
+              
+              // Only auto-unlock if within 25 meters and the location is open
+              if (dist <= 25 && !unlocking && status.open) {
+                unlockNext();
+              }
+            } catch (err) {
+              console.error("Error checking schedule:", err);
+              // If there's an error with the schedule format, still allow unlocking
+              setScheduleStatus(null);
+              if (dist <= 25 && !unlocking) {
+                unlockNext();
+              }
+            }
+          } else {
+            // No schedule restrictions, so clear any previous status
+            setScheduleStatus(null);
+            
+            // Auto unlock if within 25 meters
+            if (dist <= 25 && !unlocking) {
+              unlockNext();
+            }
           }
         }
       },
@@ -251,6 +293,30 @@ export default function Player() {
       setUnlocking(false)
     }
   }, [fetcher.state, unlocking])
+  
+  // Update schedule status every minute if we're at a location with schedule constraints
+  useEffect(() => {
+    if (!watching || !distance || distance > 25 || !items[currentItem]?.onlyDuring) {
+      return; // No need to update if not at a scheduled location
+    }
+    
+    // Update schedule status immediately
+    const updateScheduleStatus = () => {
+      if (items[currentItem]?.onlyDuring) {
+        const status = getScheduleStatus(new Date(), items[currentItem].onlyDuring!);
+        setScheduleStatus(status);
+      }
+    };
+    
+    // Set up interval to update every minute
+    const intervalId = setInterval(updateScheduleStatus, 60000);
+    
+    // Run once immediately
+    updateScheduleStatus();
+    
+    // Clean up on unmount
+    return () => clearInterval(intervalId);
+  }, [watching, distance, currentItem, items])
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-md">
@@ -267,18 +333,25 @@ export default function Player() {
             <h3 className="font-semibold">Your Soundtrack</h3>
             <ul className="space-y-3">
               {items.map((item, index) => (
-                <li key={index} className="flex items-center p-3 bg-white rounded border border-gray-200">
-                  <span className="inline-block w-6 h-6 text-center bg-green-500 text-white rounded-full mr-2">
-                    {index + 1}
-                  </span>
-                  <a
-                    href={item.spotifyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-green-500 hover:underline"
-                  >
-                    {item.spotifyUrl.substring(0, 40)}...
-                  </a>
+                <li key={index} className="p-3 bg-white rounded border border-gray-200">
+                  <div className="flex items-center">
+                    <span className="inline-block w-6 h-6 text-center bg-green-500 text-white rounded-full mr-2">
+                      {index + 1}
+                    </span>
+                    <a
+                      href={item.spotifyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-green-500 hover:underline"
+                    >
+                      {item.spotifyUrl.substring(0, 40)}...
+                    </a>
+                  </div>
+                  {item.onlyDuring && (
+                    <div className="mt-2 text-xs text-gray-500 pl-8">
+                      <span className="font-medium">Only available during:</span> {item.onlyDuring}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -361,14 +434,56 @@ export default function Player() {
                         : "Keep walking in the direction of the arrow"}
                     </div>
 
+                    {items[currentItem]?.onlyDuring && scheduleStatus && (
+                      <div className="mb-4">
+                        {scheduleStatus.open ? (
+                          <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm mb-4">
+                            <span className="inline-block w-4 h-4 rounded-full bg-green-500 mr-2"></span>
+                            <span className="font-medium">Location is open now</span>
+                            <div className="mt-1 text-green-700">
+                              You can unlock this song!
+                            </div>
+                            <div className="mt-1 text-green-600">
+                              Open hours: {items[currentItem].onlyDuring}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm mb-4">
+                            <span className="inline-block w-4 h-4 rounded-full bg-orange-500 mr-2"></span>
+                            <span className="font-medium">This song can only be unlocked during open hours</span>
+                            <div className="mt-2 text-orange-700">
+                              <span className="font-medium">Open hours:</span> {items[currentItem].onlyDuring}
+                            </div>
+                            {scheduleStatus.nextOpenIn && (
+                              <div className="mt-2 text-orange-700">
+                                You'll need to return in approximately {Math.ceil(scheduleStatus.nextOpenIn! / 60)} hours to unlock this song
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
                     {distance <= 25 && (
-                      <button
-                        onClick={unlockNext}
-                        disabled={unlocking}
-                        className="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-6 rounded-lg disabled:opacity-50 w-full"
-                      >
-                        {unlocking ? "Unlocking..." : "Unlock This Location"}
-                      </button>
+                      <>
+                        {items[currentItem].onlyDuring && scheduleStatus && !scheduleStatus.open ? (
+                          <div className="text-sm text-orange-700 mb-4 text-center font-medium">
+                            You're at the right spot, but you need to come back during open hours!
+                          </div>
+                        ) : null}
+                        
+                        <button
+                          onClick={unlockNext}
+                          disabled={unlocking || (items[currentItem].onlyDuring && scheduleStatus && !scheduleStatus.open)}
+                          className="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-6 rounded-lg disabled:opacity-50 w-full"
+                        >
+                          {unlocking ? "Unlocking..." : (
+                            items[currentItem].onlyDuring && scheduleStatus && !scheduleStatus.open ? 
+                              "Location Closed - Song Locked" : 
+                              "Unlock This Song"
+                          )}
+                        </button>
+                      </>
                     )}
                   </>
                 ) : (
@@ -395,18 +510,25 @@ export default function Player() {
             ) : (
               <ul className="space-y-3">
                 {items.slice(0, currentItem).map((item, index) => (
-                  <li key={index} className="flex items-center p-3 bg-green-50 rounded border border-green-200">
-                    <span className="inline-block w-6 h-6 text-center bg-green-500 text-white rounded-full mr-2">
-                      {index + 1}
-                    </span>
-                    <a
-                      href={item.spotifyUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-green-500 hover:underline"
-                    >
-                      {item.spotifyUrl.substring(0, 40)}...
-                    </a>
+                  <li key={index} className="p-3 bg-green-50 rounded border border-green-200">
+                    <div className="flex items-center">
+                      <span className="inline-block w-6 h-6 text-center bg-green-500 text-white rounded-full mr-2">
+                        {index + 1}
+                      </span>
+                      <a
+                        href={item.spotifyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-green-500 hover:underline"
+                      >
+                        {item.spotifyUrl.substring(0, 40)}...
+                      </a>
+                    </div>
+                    {item.onlyDuring && (
+                      <div className="mt-2 text-xs text-gray-500 pl-8">
+                        <span className="font-medium">Only available during:</span> {item.onlyDuring}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

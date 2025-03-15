@@ -5,7 +5,7 @@ import {
 } from "react-router"
 import type { Route } from "./+types/new"
 import { createPlacelist } from "../../lib/db"
-import { parsePlacelistText } from "../../lib/utils"
+import { parsePlacelistText } from "../../lib/placelistParsers"
 import PlacelistEditor from "../../components/PlacelistEditor"
 import { requireUser } from "../../lib/session"
 

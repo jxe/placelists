@@ -1,7 +1,7 @@
 import { redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/$id.edit";
 import { getPlacelist, updatePlacelist } from "../../lib/db";
-import { parsePlacelistText } from "../../lib/utils";
+import { parsePlacelistText, formatAsYaml } from "../../lib/placelistParsers";
 import PlacelistEditor from "../../components/PlacelistEditor";
 import { requireUser } from "../../lib/session";
 
@@ -20,11 +20,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Unauthorized: You can only edit your own placelists", { status: 403 });
   }
   
-  // Convert the items array to text format
+  // Convert the items array to YAML format
   const items = placelist.items as Array<{ location: { lat: number; lng: number }; spotifyUrl: string }>;
-  const placelistText = items.map(item => 
-    `${item.location.lat},${item.location.lng}\n${item.spotifyUrl}`
-  ).join('\n');
+  const placelistText = formatAsYaml(items);
   
   return { placelist, placelistText, user };
 }
