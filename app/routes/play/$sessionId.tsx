@@ -1,39 +1,64 @@
-import { useLoaderData, useFetcher } from "react-router"
+import { useLoaderData, useFetcher, Link, redirect } from "react-router"
 import { useEffect, useState, useRef } from "react"
 import type { Route } from "./+types/$sessionId"
-import { getSession, updateSessionProgress } from "../../lib/db"
+import { getSessionWithUser, updateSessionProgress, associateSessionWithUser } from "../../lib/db"
 import { calculateDistance, calculateBearing, getCompassDirection, getScheduleStatus } from "../../lib/utils"
+import { getUser } from "../../lib/session"
 
-export async function loader({ params }: Route.LoaderArgs) {
-  const session = await getSession(params.sessionId as string)
+export async function loader({ params, request }: Route.LoaderArgs) {
+  const sessionId = params.sessionId as string
+  const session = await getSessionWithUser(sessionId)
 
   if (!session) {
     throw new Response("Not Found", { status: 404 })
   }
 
-  return { session }
+  // Check if there's a logged in user
+  const user = await getUser(request)
+
+  return { session, user }
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
-  const session = await getSession(params.sessionId as string)
+  const session = await getSessionWithUser(params.sessionId as string)
 
   if (!session) {
     throw new Response("Not Found", { status: 404 })
   }
 
   const formData = await request.formData()
-  const progress = Number(formData.get("progress"))
+  const intent = formData.get("intent")
 
-  if (isNaN(progress)) {
-    return { error: "Invalid progress value", status: 400 }
+  if (intent === "update-progress") {
+    const progress = Number(formData.get("progress"))
+
+    if (isNaN(progress)) {
+      return { error: "Invalid progress value", status: 400 }
+    }
+
+    // Only allow increasing progress (unlocking new songs)
+    if (progress > session.progress) {
+      await updateSessionProgress(session.id, progress)
+    }
+    
+    return { success: true }
+  } 
+  else if (intent === "associate-session") {
+    const user = await getUser(request)
+    
+    if (!user) {
+      // If no user is logged in, redirect to login with return URL
+      const params = new URLSearchParams()
+      params.set("returnTo", `/play/${session.id}`)
+      return redirect(`/auth/login?${params.toString()}`)
+    }
+    
+    // Associate the session with the user
+    const updatedSession = await associateSessionWithUser(session.id, user.id)
+    return { success: true, session: updatedSession }
   }
-
-  // Only allow increasing progress (unlocking new songs)
-  if (progress > session.progress) {
-    await updateSessionProgress(session.id, progress)
-  }
-
-  return { success: true }
+  
+  return { error: "Invalid intent", status: 400 }
 }
 
 export function meta({ data }: Route.MetaArgs) {
@@ -70,13 +95,16 @@ interface GeoPosition {
 }
 
 export default function Player() {
-  const { session } = useLoaderData<typeof loader>()
+  const { session, user } = useLoaderData<typeof loader>()
   const placelist = session.placelist
   const items = placelist.items as Array<{ 
     location: { lat: number; lng: number }; 
     spotifyUrl: string;
     onlyDuring?: string;
   }>
+  
+  // Check if session is already associated with a user
+  const isSessionSaved = Boolean(session.userId)
 
   const [position, setPosition] = useState<GeoPosition | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -94,7 +122,8 @@ export default function Player() {
   } | null>(null)
 
   const watchId = useRef<number | null>(null)
-  const fetcher = useFetcher()
+  const progressFetcher = useFetcher()
+  const saveFetcher = useFetcher()
 
   // Complete state
   const isComplete = currentItem >= items.length
@@ -258,8 +287,11 @@ export default function Player() {
     if (currentItem < items.length && !unlocking) {
       setUnlocking(true)
 
-      fetcher.submit(
-        { progress: currentItem + 1 },
+      progressFetcher.submit(
+        { 
+          intent: "update-progress",
+          progress: currentItem + 1 
+        },
         { method: "post" }
       )
 
@@ -287,12 +319,12 @@ export default function Player() {
     }
   }, [])
 
-  // Reset unlocking state when the fetcher is done
+  // Reset unlocking state when the progress fetcher is done
   useEffect(() => {
-    if (fetcher.state === "idle" && unlocking) {
+    if (progressFetcher.state === "idle" && unlocking) {
       setUnlocking(false)
     }
-  }, [fetcher.state, unlocking])
+  }, [progressFetcher.state, unlocking])
   
   // Update schedule status every minute if we're at a location with schedule constraints
   useEffect(() => {
@@ -320,7 +352,46 @@ export default function Player() {
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-md">
-      <h1 className="text-2xl font-bold mb-2">{placelist.name}</h1>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2">
+        <h1 className="text-2xl font-bold">{placelist.name}</h1>
+        
+        {/* Save Progress Button */}
+        <div className="mt-2 sm:mt-0">
+          {isSessionSaved ? (
+            <div className="flex items-center text-sm text-green-600">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              {session.user ? (
+                <span>Progress saved to <span className="font-medium">{session.user.name}</span></span>
+              ) : (
+                <span>Progress saved to your account</span>
+              )}
+            </div>
+          ) : (
+            <saveFetcher.Form method="post">
+              <input type="hidden" name="intent" value="associate-session" />
+              <button 
+                type="submit"
+                className="flex items-center text-sm bg-blue-500 hover:bg-blue-600 text-white font-medium py-1 px-3 rounded"
+                disabled={saveFetcher.state !== "idle"}
+              >
+                {saveFetcher.state !== "idle" ? (
+                  <span>Saving...</span>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                    </svg>
+                    {user ? "Save Progress" : "Sign In to Save Progress"}
+                  </>
+                )}
+              </button>
+            </saveFetcher.Form>
+          )}
+        </div>
+      </div>
+      
       {placelist.description && (
         <p className="text-gray-700 mb-6">{placelist.description}</p>
       )}
@@ -434,7 +505,7 @@ export default function Player() {
                         : "Keep walking in the direction of the arrow"}
                     </div>
 
-                    {items[currentItem]?.onlyDuring && scheduleStatus && (
+                    {Boolean(items[currentItem]?.onlyDuring) && scheduleStatus ? (
                       <div className="mb-4">
                         {scheduleStatus.open ? (
                           <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm mb-4">
@@ -454,32 +525,34 @@ export default function Player() {
                             <div className="mt-2 text-orange-700">
                               <span className="font-medium">Open hours:</span> {items[currentItem].onlyDuring}
                             </div>
-                            {scheduleStatus.nextOpenIn && (
+                            {scheduleStatus.nextOpenIn ? (
                               <div className="mt-2 text-orange-700">
-                                You'll need to return in approximately {Math.ceil(scheduleStatus.nextOpenIn! / 60)} hours to unlock this song
+                                You'll need to return in approximately {Math.ceil(scheduleStatus.nextOpenIn / 60)} hours to unlock this song
                               </div>
-                            )}
+                            ) : null}
                           </div>
                         )}
                       </div>
-                    )}
+                    ) : null}
                     
                     {distance <= 25 && (
                       <>
-                        {items[currentItem].onlyDuring && scheduleStatus && !scheduleStatus.open ? (
-                          <div className="text-sm text-orange-700 mb-4 text-center font-medium">
-                            You're at the right spot, but you need to come back during open hours!
-                          </div>
-                        ) : null}
+                        {Boolean(items[currentItem].onlyDuring) && scheduleStatus ? 
+                          (scheduleStatus.open === false ? (
+                            <div className="text-sm text-orange-700 mb-4 text-center font-medium">
+                              You're at the right spot, but you need to come back during open hours!
+                            </div>
+                          ) : null) 
+                        : null}
                         
                         <button
                           onClick={unlockNext}
-                          disabled={unlocking || (items[currentItem].onlyDuring && scheduleStatus && !scheduleStatus.open)}
+                          disabled={unlocking || (Boolean(items[currentItem].onlyDuring) && scheduleStatus ? scheduleStatus.open === false : false)}
                           className="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-6 rounded-lg disabled:opacity-50 w-full"
                         >
                           {unlocking ? "Unlocking..." : (
-                            items[currentItem].onlyDuring && scheduleStatus && !scheduleStatus.open ? 
-                              "Location Closed - Song Locked" : 
+                            Boolean(items[currentItem].onlyDuring) && scheduleStatus ? 
+                              (scheduleStatus.open === false ? "Location Closed - Song Locked" : "Unlock This Song") : 
                               "Unlock This Song"
                           )}
                         </button>

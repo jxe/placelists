@@ -50,7 +50,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
   const { adjectives1, adjectives2, nouns } = useLoaderData<typeof loader>();
   const navigation = useNavigation()
   const [searchParams] = useSearchParams()
-  const redirectTo = searchParams.get("redirectTo") || "/placelists"
+  const redirectTo = searchParams.get("redirectTo") || searchParams.get("returnTo") || "/placelists"
   const isSubmitting = navigation.state === "submitting"
 
   return (

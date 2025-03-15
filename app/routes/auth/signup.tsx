@@ -50,7 +50,7 @@ export function meta() {
 export default function Signup({ actionData }: Route.ComponentProps) {
   const navigation = useNavigation()
   const [searchParams] = useSearchParams()
-  const redirectTo = searchParams.get("redirectTo") || "/placelists"
+  const redirectTo = searchParams.get("redirectTo") || searchParams.get("returnTo") || "/placelists"
   const isSubmitting = navigation.state === "submitting"
 
   return (

@@ -838,7 +838,7 @@ export default function PlacelistEditor({
   };
 
   // Function to start editing an entry
-  const startEditingEntry = (index: number, type: 'location' | 'spotify') => {
+  const startEditingEntry = (index: number, type: 'location' | 'spotify' | 'schedule') => {
     setEditingState({ index, type });
   };
   

@@ -152,3 +152,26 @@ export async function updateSessionProgress(id: string, progress: number) {
     data: { progress },
   })
 }
+
+export async function associateSessionWithUser(sessionId: string, userId: string) {
+  return prisma.userSession.update({
+    where: { id: sessionId },
+    data: { userId },
+    include: { user: true }
+  })
+}
+
+export async function getSessionWithUser(id: string) {
+  return prisma.userSession.findUnique({
+    where: { id },
+    include: { placelist: true, user: true },
+  })
+}
+
+export async function getUserSessions(userId: string) {
+  return prisma.userSession.findMany({
+    where: { userId },
+    include: { placelist: true },
+    orderBy: { updatedAt: 'desc' }
+  })
+}
